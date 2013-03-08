@@ -42,6 +42,7 @@ final public class MCSSThread implements Callable<List<IAtomContainer>> {
     private final List<IAtomContainer> mcssList;
     private final JobType jobType;
     private int taskNumber;
+    private TaskUpdater updater = null;
 
     /**
      *
@@ -49,10 +50,11 @@ final public class MCSSThread implements Callable<List<IAtomContainer>> {
      * @param jobType MCS/Substructure
      * @param taskNumber
      */
-    public MCSSThread(List<IAtomContainer> mcssList, JobType jobType, int taskNumber) {
+    public MCSSThread(List<IAtomContainer> mcssList, JobType jobType, TaskUpdater updater, int taskNumber) {
         this.mcssList = mcssList;
         this.jobType = jobType;
         this.taskNumber = taskNumber;
+        this.updater = updater;
     }
 
     @Override
@@ -71,6 +73,8 @@ final public class MCSSThread implements Callable<List<IAtomContainer>> {
                 Collection<Fragment> fragmentsFomMCS;
                 BaseMapping comparison;
                 if (this.jobType.equals(JobType.MCS)) {
+                    System.out.println("task "+taskNumber+" query="+getMCSSSmiles(querySeed));
+                    System.out.println("task "+taskNumber+" target="+getMCSSSmiles(target));
                     comparison = new Isomorphism(querySeed, target, Algorithm.DEFAULT, true, true);
                     comparison.setChemFilters(true, true, true);
                     fragmentsFomMCS = getMCSS(comparison);
@@ -95,16 +99,26 @@ final public class MCSSThread implements Callable<List<IAtomContainer>> {
                     break;
                 }
                 querySeed = fragmentsFomMCS.iterator().next().getContainer();
+                if (updater != null) updater.incrementCount();
             }
 
         } catch (Exception e) {
             Logger.getLogger(MCSSThread.class.getName()).log(Level.SEVERE, null, e);
+            if (updater != null) updater.logException(MCSSThread.class.getName(), Level.SEVERE, null, e);
         }
         if (resultsList != null && querySeed != null) {
             resultsList.add(querySeed);
         }
 
         long endTime = Calendar.getInstance().getTimeInMillis();
+        Logger.getLogger(MCSSThread.class.getName()).log(Level.FINE,
+                         "Done: task " + taskNumber + " took " + (endTime - startTime) + "ms", (Throwable)null);
+        if (updater != null) {
+              updater.logException(MCSSThread.class.getName(), Level.FINE,
+                                   "Done: task " + taskNumber + " took " + (endTime - startTime) + "ms", null);
+              updater.logException(MCSSThread.class.getName(), Level.FINE,
+                                   "      result: "+getMCSSSmiles(querySeed), null);
+        }
 //        System.out.println("Done: task " + taskNumber + " took " + (endTime - startTime) + "ms");
 //        System.out.println(" and mcss has " + querySeed.getAtomCount() + " atoms, and " + querySeed.getBondCount() + " bonds");
         return resultsList;
@@ -120,9 +134,11 @@ final public class MCSSThread implements Callable<List<IAtomContainer>> {
                     matchList.add(new Fragment(match));
                 } catch (CDKException ex) {
                     Logger.getLogger(MCSSThread.class.getName()).log(Level.SEVERE, null, ex);
+                    if (updater != null) updater.logException(MCSSThread.class.getName(),Level.SEVERE, null, ex);
                 }
             } catch (CloneNotSupportedException ex) {
                 Logger.getLogger(MCSSThread.class.getName()).log(Level.SEVERE, null, ex);
+                if (updater != null) updater.logException(MCSSThread.class.getName(),Level.SEVERE, null, ex);
             }
             // System.out.println("match has "+match.getAtomCount()+" atoms, and "+match.getBondCount()+" bonds");
         }
