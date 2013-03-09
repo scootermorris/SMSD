@@ -26,44 +26,56 @@
  */
 package cmd;
 
+import cmd.pdb.LigandHelper;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
 import org.apache.commons.cli.MissingOptionException;
+import org.openscience.cdk.AtomContainer;
+import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.ChemFile;
 import org.openscience.cdk.DefaultChemObjectBuilder;
-import org.openscience.cdk.AtomContainer;
 import org.openscience.cdk.aromaticity.CDKHueckelAromaticityDetector;
 import org.openscience.cdk.exception.CDKException;
+import org.openscience.cdk.graph.ConnectivityChecker;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IChemFile;
+import org.openscience.cdk.interfaces.IChemObjectBuilder;
 import org.openscience.cdk.io.CMLReader;
 import org.openscience.cdk.io.IChemObjectReader;
 import org.openscience.cdk.io.ISimpleChemObjectReader;
 import org.openscience.cdk.io.MDLReader;
 import org.openscience.cdk.io.Mol2Reader;
 import org.openscience.cdk.io.PDBReader;
-import org.openscience.cdk.io.iterator.IIteratingChemObjectReader;
+import org.openscience.cdk.io.ReaderFactory;
+import org.openscience.cdk.io.SMILESReader;
+import org.openscience.cdk.io.iterator.IteratingSDFReader;
 import org.openscience.cdk.layout.StructureDiagramGenerator;
 import org.openscience.cdk.signature.MoleculeSignature;
+import org.openscience.cdk.smiles.DeduceBondSystemTool;
 import org.openscience.cdk.smiles.SmilesParser;
+import org.openscience.cdk.tools.CDKHydrogenAdder;
+import org.openscience.cdk.tools.ILoggingTool;
+import org.openscience.cdk.tools.LoggingToolFactory;
 import org.openscience.cdk.tools.manipulator.AtomContainerManipulator;
 import org.openscience.cdk.tools.manipulator.ChemFileManipulator;
 
-import cmd.pdb.LigandHelper;
-import java.util.Collections;
-import java.util.List;
-import org.openscience.cdk.CDKConstants;
-import org.openscience.cdk.io.iterator.IteratingSDFReader;
-
+/**
+ *
+ * @author Syed Asad Rahman <asad@ebi.ac.uk>
+ */
 public class InputHandler {
 
+    private final static ILoggingTool logger =
+            LoggingToolFactory.createLoggingTool(InputHandler.class);
     private ArgumentHandler argumentHandler;
     private StructureDiagramGenerator sdg;
     private Map<String, String> singularDataTypes;
@@ -96,6 +108,7 @@ public class InputHandler {
 
         multipleDataTypes = new HashMap<String, String>();
         multipleDataTypes.put("SDF", "SD file format");
+        multipleDataTypes.put("SMIF", "SMILES file format");
 
         stringDataTypes = new HashMap<String, String>();
         stringDataTypes.put("SMI", "SMILES string format");
@@ -234,11 +247,12 @@ public class InputHandler {
 
     /**
      *
-     * @param mol
+     * @param molecule
      * @param type
      * @throws CDKException
      */
-    public void configure(IAtomContainer mol, String type) throws CDKException {
+    public void configure(IAtomContainer molecule, String type) throws CDKException {
+        IAtomContainer mol = molecule;
         String id = "";
         if (type.equals("PDB")) {
             LigandHelper.addMissingBondOrders(mol);
@@ -353,22 +367,93 @@ public class InputHandler {
      *
      * @return
      * @throws FileNotFoundException
+     * @throws IOException
+     * @throws CDKException
      */
-    public IIteratingChemObjectReader getAllTargets() throws FileNotFoundException {
+    public List<IAtomContainer> getAllTargets() throws FileNotFoundException, IOException, CDKException {
         String type = argumentHandler.getTargetType();
-        if (type.equals("SDF")) {
-            FileReader in = new FileReader(argumentHandler.getTargetFilepath());
-            return new IteratingSDFReader(
-                    in, DefaultChemObjectBuilder.getInstance());
+        IChemObjectBuilder builder = DefaultChemObjectBuilder.getInstance();
+        ISimpleChemObjectReader reader;
+        boolean deducebonds = false;
+
+        ReaderFactory readerFactory = new ReaderFactory();
+        IChemFile emptyChemFile;
+        IChemFile chemFile;
+
+        String infileName = argumentHandler.getTargetFilepath();
+        File inputFile = new File(infileName);
+
+        if (!inputFile.isFile()) {
+            throw new FileNotFoundException("ERROR: Input File Not Found " + infileName);
         }
-        return null;
+
+        List<IAtomContainer> allAtomContainers = new ArrayList<IAtomContainer>();
+
+        if (type.equals("SDF")) {
+            IteratingSDFReader iteratingSDFReader =
+                    new IteratingSDFReader(
+                    new FileReader(inputFile), DefaultChemObjectBuilder.getInstance());
+            while (iteratingSDFReader.hasNext()) {
+                allAtomContainers.add(iteratingSDFReader.next());
+            }
+            iteratingSDFReader.close();
+        } else if (type.equals("SMIF")) {
+            reader = new SMILESReader(new FileReader(inputFile));
+            deducebonds = true;
+            emptyChemFile = builder.newInstance(IChemFile.class);
+            chemFile = reader.read(emptyChemFile);
+            allAtomContainers = ChemFileManipulator.getAllAtomContainers(chemFile);
+        } else {
+            reader = readerFactory.createReader(new FileReader(inputFile));
+            emptyChemFile = builder.newInstance(IChemFile.class);
+            chemFile = reader.read(emptyChemFile);
+            allAtomContainers = ChemFileManipulator.getAllAtomContainers(chemFile);
+        }
+        if (!allAtomContainers.isEmpty()) {
+            // Get Molecules
+            List<IAtomContainer> atomContainerList = new ArrayList<IAtomContainer>(allAtomContainers.size());
+
+            CDKHydrogenAdder adder = CDKHydrogenAdder.getInstance(DefaultChemObjectBuilder.getInstance());
+            for (int atomContainerNr = 0; atomContainerNr < allAtomContainers.size();) {
+                IAtomContainer temp = allAtomContainers.get(atomContainerNr);
+                IAtomContainer atomcontainerHFree = AtomContainerManipulator.removeHydrogens(temp);
+                AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(atomcontainerHFree);
+                if (deducebonds) {
+                    DeduceBondSystemTool dbst = new DeduceBondSystemTool();
+                    atomcontainerHFree = dbst.fixAromaticBondOrders(atomcontainerHFree);
+                }
+
+                adder.addImplicitHydrogens(atomcontainerHFree);
+                CDKHueckelAromaticityDetector.detectAromaticity(atomcontainerHFree);
+                String index = String.valueOf((atomContainerNr + 1));
+                boolean flag = ConnectivityChecker.isConnected(atomcontainerHFree);
+                String title = atomcontainerHFree.getProperty(CDKConstants.TITLE) != null
+                        ? (String) atomcontainerHFree.getProperty(CDKConstants.TITLE) : index;
+                if (!flag) {
+                    System.err.println("WARNING : Skipping target AtomContainer "
+                            + title + " as it is not connected.");
+                    continue;
+                } else {
+                    if (title != null) {
+                        atomcontainerHFree.setID(title);
+                    }
+                    argumentHandler.setTargetMolOutName(atomcontainerHFree.getID());
+                }
+                atomContainerList.add(atomContainerNr, atomcontainerHFree);
+                atomContainerNr++;
+            }
+            allAtomContainers.clear();
+            return atomContainerList;
+        } else {
+            return null;
+        }
     }
 
     private static void setAtomID(IAtomContainer mol) {
         int index = 1;
-
         for (IAtom atom : mol.atoms()) {
-            atom.setID(String.valueOf(index++));
+            atom.setID(String.valueOf(index));
+            index++;
         }
     }
 }

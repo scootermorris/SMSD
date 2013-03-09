@@ -27,6 +27,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.tools.ILoggingTool;
 import org.openscience.cdk.tools.LoggingToolFactory;
+import org.openscience.cdk.tools.manipulator.AtomContainerManipulator;
 import org.openscience.smsd.tools.AtomContainerComparator;
 
 /**
@@ -40,23 +41,65 @@ final public class MCSS {
             LoggingToolFactory.createLoggingTool(MCSS.class);
     private final List<IAtomContainer> calculateMCSS;
     private TaskUpdater updater = null;
+    private double percentDone = 0.01;
+    private final boolean matchBonds;
+    private final boolean matchRings;
 
+    /**
+     *
+     * @param jobList
+     * @param jobType
+     * @param updater
+     * @param numberOfThreads
+     */
     public MCSS(List<IAtomContainer> jobList, JobType jobType, TaskUpdater updater, int numberOfThreads) {
-        this.updater = updater;
+        this(jobList, jobType, updater, numberOfThreads, true, true);
+    }
+
+    /**
+     *
+     * @param jobList
+     * @param jobType
+     * @param updater
+     * @param numberOfThreads
+     * @param matchBonds
+     * @param matchRings
+     */
+    public MCSS(List<IAtomContainer> jobList, JobType jobType, TaskUpdater updater, int numberOfThreads, boolean matchBonds, boolean matchRings) {
         int threadsAvailable = Runtime.getRuntime().availableProcessors() - 1;
-        if (numberOfThreads > 0) {
+        this.updater = updater;
+
+        logger.debug("Demand threads: " + numberOfThreads);
+        logger.debug(", Available threads: " + threadsAvailable);
+        System.out.println("Demand threads: " + numberOfThreads);
+        System.out.println(", Available threads: " + threadsAvailable);
+        if (numberOfThreads > 0 && threadsAvailable >= numberOfThreads) {
             threadsAvailable = numberOfThreads;
+        } else if (threadsAvailable <= 0) {
+            threadsAvailable = 1;
+        }
+        logger.debug(", Assigned threads: " + threadsAvailable + "\n");
+        System.out.println(", Assigned threads: " + threadsAvailable + "\n");
+        /*
+         * Remove hydrogen from the molecules
+         **/
+        List<IAtomContainer> selectedJobs = new ArrayList<IAtomContainer>(jobList.size());
+        for (IAtomContainer ac : jobList) {
+            selectedJobs.add(AtomContainerManipulator.removeHydrogens(ac));
         }
         if (updater != null) updater.updateStatus("Calculating MCSS using "+threadsAvailable+" threads");
         /*
          * Sort the molecules in the ascending order of atom size and atom type
          */
         Comparator<IAtomContainer> comparator = new AtomContainerComparator();
-        Collections.sort(jobList, comparator);
+        Collections.sort(selectedJobs, comparator);
+        this.matchBonds = matchBonds;
+        this.matchRings = matchRings;
         /*
          * Call the MCS
          */
-        calculateMCSS = calculateMCSS(jobList, jobType, threadsAvailable);
+        calculateMCSS = calculateMCSS(selectedJobs, jobType, threadsAvailable);
+        selectedJobs.clear();
     }
 
     private synchronized List<IAtomContainer> calculateMCSS(List<IAtomContainer> mcssList, JobType jobType, int nThreads) {
@@ -115,8 +158,9 @@ final public class MCSS {
             }
             List<IAtomContainer> subList = new ArrayList<IAtomContainer>(mcssList.subList(i, endPoint));
             if (subList.size() > 1) {
-                MCSSThread mcssJobThread = new MCSSThread(subList, jobType, updater, taskNumber++);
+                MCSSThread mcssJobThread = new MCSSThread(subList, jobType, updater, taskNumber, matchBonds, matchRings);
                 callablesQueue.add(mcssJobThread);
+                taskNumber++;
             } else {
                 solutions.add(subList.get(0));
             }

@@ -38,9 +38,11 @@ import org.apache.commons.cli.PosixParser;
 
 /**
  *
- * @author sar
+ * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 public class ArgumentHandler {
+
+    final static String NEW_LINE = System.getProperty("line.separator");
 
     /**
      * Get any arguments that were left over.
@@ -119,8 +121,8 @@ public class ArgumentHandler {
     }
 
     /**
-     * Parses the options in the command line arguments and returns an array of strings corresponding to the filenames
-     * given as arguments only
+     * Parses the options in the command line arguments and returns an array of
+     * strings corresponding to the filenames given as arguments only
      *
      * @param args
      * @throws org.apache.commons.cli.ParseException
@@ -173,13 +175,13 @@ public class ArgumentHandler {
                 OptionBuilder.hasArg().withDescription("Query type (MOL, SMI, etc)").withArgName("type").create("Q"));
 
         options.addOption(
-                OptionBuilder.hasArg().withDescription("Target type (MOL, SMI, etc)").withArgName("type").create("T"));
+                OptionBuilder.hasArg().withDescription("Target type (MOL, SMI, SMIF, etc)").withArgName("type").create("T"));
 
         options.addOption(
                 OptionBuilder.hasArg().withDescription("Output the substructure to a file").withArgName("filename").create("o"));
 
         options.addOption(
-                OptionBuilder.hasArg().withDescription("Output type").withArgName("type").create("O"));
+                OptionBuilder.hasArg().withDescription("Output type (SMI, MOL)").withArgName("type").create("O"));
 
         options.addOption(
                 OptionBuilder.hasOptionalArgs(2).withValueSeparator().withDescription("Image options").withArgName("option=value").create("I"));
@@ -230,7 +232,7 @@ public class ArgumentHandler {
         remainingArgs = line.getArgs();
 
         if (line.hasOption('h') || line.getOptions().length == 0) {
-            System.out.println("Hello");
+//            System.out.println("Hello");
             helpRequested = true;
         }
 
@@ -325,31 +327,53 @@ public class ArgumentHandler {
     public void printHelp(Options options) {
         HelpFormatter formatter = new HelpFormatter();
 
-        System.out.println("\n++++++++++++++++++++++++++++++++++++++++++++++"
-                + "\nSMSD (Small AtomContainer Similarity Detector)"
-                + "\n++++++++++++++++++++++++++++++++++++++++++++++"
-                + "\nContact: Syed Asad Rahman,"
-                + "\n\t EMBL-EBI, Hinxton "
-                + "\n\t Cambridge CB10 1SD"
-                + "\n\t United Kingdom "
-                + "\ne-mail: asad@ebi.ac.uk"
-                + "\n++++++++++++++++++++++++++++++++++++++++++++++\n"
-                + "\nSMSD software can calculate the similarity between"
-                + "\ntwo small molecules by using an inhouse algorithm"
-                + "\ndeveloped at EMBL-EBI. "
-                + "It also uses CDK based"
-                + "\nFingerprints and Maximum Common Subgraph (MCS) "
-                + "\nmatching for finding similarity. "
-                + "It create four"
-                + "\nfiles which contains similarity scores between"
-                + "\nmatched atoms.\n"
-                + "\n++++++++++++++++++++++++++++++++++++++++++++++"
-                + "\nNOTE: The graph matching is performed by removing"
-                + "\nthe Hydrogens"
-                + "\n++++++++++++++++++++++++++++++++++++++++++++++\n");
+        System.out.println(NEW_LINE + "++++++++++++++++++++++++++++++++++++++++++++++"
+                + NEW_LINE + "Small Molecule Similarity Detector (SMSD)"
+                + NEW_LINE + "+++++++++++++++++++++++++++++++++++++++++++++"
+                + NEW_LINE + "Contact: Syed Asad Rahman,"
+                + NEW_LINE + "\t EMBL-EBI, Hinxton "
+                + NEW_LINE + "\t Cambridge CB10 1SD"
+                + NEW_LINE + "\t United Kingdom "
+                + NEW_LINE + "e-mail:  asad@ebi.ac.uk"
+                + NEW_LINE + "++++++++++++++++++++++++++++++++++++++++++++++" + NEW_LINE
+                + NEW_LINE + "SMSD can calculate similarity between small molecules"
+                + NEW_LINE + "by using an inhouse algorithm developed at EMBL-EBI. It"
+                + NEW_LINE + "reports similarity scores and highlights the matched "
+                + NEW_LINE + "substructure." + NEW_LINE
+                + NEW_LINE + "It uses CDK library for handling chemistry. "
+                + NEW_LINE + "++++++++++++++++++++++++++++++++++++++++++++++"
+                + NEW_LINE + "Publication:"
+                + NEW_LINE + "   S.A. Rahman et.al, (2009), Journal of Cheminformatics"
+                + NEW_LINE + "   (http://www.jcheminf.com/content/1/1/12)"
+                + NEW_LINE + "++++++++++++++++++++++++++++++++++++++++++++++" + NEW_LINE);
 
-        formatter.printHelp("\n", options);
-        System.out.println("\n++++++++++++++++++++++++++++++++++++++++++++++\n");
+        formatter.printHelp(NEW_LINE, options);
+        System.out.println(getExamples());
+        System.out.println(NEW_LINE + "++++++++++++++++++++++++++++++++++++++++++++++" + NEW_LINE);
+    }
+
+    private StringBuilder getExamples() {
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(NEW_LINE);
+        sb.append("Usage examples: ");
+        sb.append(NEW_LINE);
+        sb.append("To start the GUI: java -jar SMSD.jar ").append(NEW_LINE).append(NEW_LINE);
+        sb.append("Command Line Options (recommended flags):")
+                .append("\n -r -z -b will remove hydrogens, match rings, match bond types respectively.").append(NEW_LINE).append(NEW_LINE);
+        sb.append("a) Find MCS between two molecules and write the output as a MOL file:").append(NEW_LINE)
+                .append("\tsh SMSD -Q SMI -q \"CCC\" -T PDB -t ATP.pdb -O MOL -o subgraph.mol -r -z -b").append(NEW_LINE);
+        sb.append("b) Find MCS between two molecules and print the output:").append(NEW_LINE)
+                .append("\tsh SMSD -Q SMI -q \"CCC\" -T SMI -t \"CCN\" -O SMI -o -- -r -z -b").append(NEW_LINE);
+        sb.append("c) Find MCS between two molecules and generate an image highlighting the matched parts:").append(NEW_LINE)
+                .append("\tsh SMSD -Q MOL -q ADP.mol -T MOL -t ATP.mol -g -r -z -b").append(NEW_LINE);
+        sb.append("d) Find MCS between N-molecules and print the common substructure between them:").append(NEW_LINE)
+                .append("\tsh SMSD -T SDF -t arom.sdf -N -O SMI -o -- -r -z -b").append(NEW_LINE);
+        sb.append("e) Find MCS between N-molecules and highlighting the common substructure between them:").append(NEW_LINE);
+        sb.append("\tWARNING: This option might require large virtual machine memory allocation").append(NEW_LINE)
+                .append("\tsh SMSD -T SDF -t arom.sdf -N -O SMI -o -- -g -r -z -b").append(NEW_LINE).append(NEW_LINE);
+        sb.append("Note: You could use various file formats").append(NEW_LINE);
+        return sb;
     }
 
     public boolean isHelp() {
@@ -544,14 +568,16 @@ public class ArgumentHandler {
     }
 
     /**
-     * @param name @set the Target
+     * @param name
+     * @set the Target
      */
     public void setTargetMolOutName(String name) {
         this.targetOutfileName = name;
     }
 
     /**
-     * @param name @set the Query
+     * @param name
+     * @set the Query
      */
     public void setQueryMolOutName(String name) {
         this.queryOutfileName = name;
