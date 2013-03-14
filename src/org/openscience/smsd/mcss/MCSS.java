@@ -102,14 +102,14 @@ final public class MCSS {
         selectedJobs.clear();
     }
 
-    private synchronized List<IAtomContainer> calculateMCSS(List<IAtomContainer> mcssList, JobType jobType, int nThreads) {
+    private synchronized Collection<IAtomContainer> calculateMCSS(List<IAtomContainer> mcssList, JobType jobType, int nThreads) {
         if (updater != null) {
             updater.setTotalCount(mcssList.size());
             updater.incrementCount();
         }
         List<IAtomContainer> newMCSSList;
         if (nThreads == 1) {
-            newMCSSList = new LinkedList<IAtomContainer>(submitSingleThreadedJob(mcssList, jobType, nThreads));
+            newMCSSList = new LinkedList<IAtomContainer>(submitSingleThreadedJob(mcssList, jobType, updater, nThreads));
         } else {
             /*
              * Calling recursive MCS
@@ -136,9 +136,9 @@ final public class MCSS {
         return Collections.unmodifiableCollection(calculateMCSS);
     }
 
-    private synchronized LinkedBlockingQueue<IAtomContainer> submitSingleThreadedJob(List<IAtomContainer> mcssList, JobType jobType, int nThreads) {
+    private synchronized LinkedBlockingQueue<IAtomContainer> submitSingleThreadedJob(List<IAtomContainer> mcssList, JobType jobType, TaskUpdater updater, int nThreads) {
         LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<IAtomContainer>();
-        MCSSThread task = new MCSSThread(mcssList, jobType, 1);
+        MCSSThread task = new MCSSThread(mcssList, jobType, updater, 1);
         LinkedBlockingQueue<IAtomContainer> results = task.call();
         if (results != null) {
             solutions.addAll(results);
@@ -146,7 +146,7 @@ final public class MCSS {
         return solutions;
     }
 
-    private synchronized LinkedBlockingQueue<IAtomContainer> submitMultiThreadedJob(List<IAtomContainer> mcssList, JobType jobType, int nThreads) {
+    private synchronized LinkedBlockingQueue<IAtomContainer> submitMultiThreadedJob(List<IAtomContainer> mcssList, JobType jobType, TaskUpdater updater, int nThreads) {
         int taskNumber = 1;
         LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<IAtomContainer>();
         LinkedBlockingQueue<Callable<LinkedBlockingQueue<IAtomContainer>>> callablesQueue = new LinkedBlockingQueue<Callable<LinkedBlockingQueue<IAtomContainer>>>();
