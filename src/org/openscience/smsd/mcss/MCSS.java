@@ -85,7 +85,7 @@ final public class MCSS {
         /*
          * Remove hydrogen from the molecules
          **/
-        List<IAtomContainer> selectedJobs = new ArrayList<>(jobList.size());
+        List<IAtomContainer> selectedJobs = new ArrayList<IAtomContainer>(jobList.size());
         for (IAtomContainer ac : jobList) {
             selectedJobs.add(AtomContainerManipulator.removeHydrogens(ac));
         }
@@ -111,24 +111,24 @@ final public class MCSS {
         }
         List<IAtomContainer> newMCSSList;
         if (nThreads == 1) {
-            newMCSSList = new LinkedList<>(submitSingleThreadedJob(mcssList, jobType, updater, nThreads));
+            newMCSSList = new LinkedList<IAtomContainer>(submitSingleThreadedJob(mcssList, jobType, updater, nThreads));
         } else {
             /*
              * Calling recursive MCS
              */
-            newMCSSList = new LinkedList<>(submitMultiThreadedJob(mcssList, jobType, updater, nThreads));
+            newMCSSList = new LinkedList<IAtomContainer>(submitMultiThreadedJob(mcssList, jobType, updater, nThreads));
             while (newMCSSList.size() > 1) {
                 if (newMCSSList.size() > 2) {
-                    newMCSSList = new LinkedList<>(submitMultiThreadedJob(newMCSSList, jobType, updater, nThreads));
+                    newMCSSList = new LinkedList<IAtomContainer>(submitMultiThreadedJob(newMCSSList, jobType, updater, nThreads));
                 } else {
-                    newMCSSList = new LinkedList<>(submitMultiThreadedJob(newMCSSList, jobType, updater, 1));
+                    newMCSSList = new LinkedList<IAtomContainer>(submitMultiThreadedJob(newMCSSList, jobType, updater, 1));
                 }
             }
         }
         if (!mcssList.isEmpty() && !newMCSSList.isEmpty()) {
             IAtomContainer inTheList = mcssList.get(mcssList.size() - 1);
             if (inTheList == newMCSSList.iterator().next()) {
-                return new LinkedBlockingQueue<>();
+                return new LinkedBlockingQueue<IAtomContainer>();
             }
         }
         return newMCSSList;
@@ -142,7 +142,7 @@ final public class MCSS {
     }
 
     private synchronized LinkedBlockingQueue<IAtomContainer> submitSingleThreadedJob(List<IAtomContainer> mcssList, JobType jobType, TaskUpdater updater, int nThreads) {
-        LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<>();
+        LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<IAtomContainer>();
         MCSSThread task = new MCSSThread(mcssList, jobType, updater, 1);
         LinkedBlockingQueue<IAtomContainer> results = task.call();
         if (results != null) {
@@ -153,8 +153,9 @@ final public class MCSS {
 
     private synchronized LinkedBlockingQueue<IAtomContainer> submitMultiThreadedJob(List<IAtomContainer> mcssList, JobType jobType, TaskUpdater updater, int nThreads) {
         int taskNumber = 1;
-        LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<>();
-        LinkedBlockingQueue<Callable<LinkedBlockingQueue<IAtomContainer>>> callablesQueue = new LinkedBlockingQueue<>();
+        LinkedBlockingQueue<IAtomContainer> solutions = new LinkedBlockingQueue<IAtomContainer>();
+        LinkedBlockingQueue<Callable<LinkedBlockingQueue<IAtomContainer>>> callablesQueue = 
+					new LinkedBlockingQueue<Callable<LinkedBlockingQueue<IAtomContainer>>>();
         ExecutorService threadPool = Executors.newFixedThreadPool(nThreads);
         int step = (int) Math.ceil((double) mcssList.size() / (double) nThreads);
         if (step < 2) {
@@ -165,7 +166,7 @@ final public class MCSS {
             if (endPoint > mcssList.size()) {
                 endPoint = mcssList.size();
             }
-            List<IAtomContainer> subList = new ArrayList<>(mcssList.subList(i, endPoint));
+            List<IAtomContainer> subList = new ArrayList<IAtomContainer>(mcssList.subList(i, endPoint));
             if (subList.size() > 1) {
                 MCSSThread mcssJobThread = new MCSSThread(subList, jobType, updater, taskNumber, matchBonds, matchRings);
                 callablesQueue.add(mcssJobThread);
@@ -196,7 +197,10 @@ final public class MCSS {
             while (!threadPool.isTerminated()) {
             }
             System.gc();
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            logger.debug("ERROR: in AtomMappingTool: " + e.getMessage());
+            logger.error(e);
+				} catch (ExecutionException e) {
             logger.debug("ERROR: in AtomMappingTool: " + e.getMessage());
             logger.error(e);
         } finally {

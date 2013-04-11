@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.openscience.cdk.CDKConstants;
+import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.annotations.TestMethod;
 import org.openscience.cdk.aromaticity.CDKHueckelAromaticityDetector;
@@ -540,7 +541,7 @@ public class SMARTSQueryTool {
         matchingAtoms = null;
         query = cache.get(smarts);
         if (query == null) {
-            query = SMARTSParser.parse(smarts);
+            query = SMARTSParser.parse(smarts, DefaultChemObjectBuilder.getInstance());
             cache.put(smarts, query);
         }
     }

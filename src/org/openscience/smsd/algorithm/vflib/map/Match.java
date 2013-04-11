@@ -46,7 +46,7 @@
  */
 package org.openscience.smsd.algorithm.vflib.map;
 
-import java.util.Objects;
+// import java.util.Objects;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.smsd.algorithm.vflib.interfaces.INode;
@@ -69,8 +69,8 @@ public class Match {
     @Override
     public int hashCode() {
         int hash = 3;
-        hash = 31 * hash + Objects.hashCode(this.query);
-        hash = 31 * hash + Objects.hashCode(this.target);
+        hash = 31 * hash + hashCode(this.query);
+        hash = 31 * hash + hashCode(this.target);
         return hash;
     }
 
@@ -83,10 +83,10 @@ public class Match {
             return false;
         }
         final Match other = (Match) obj;
-        if (!Objects.equals(this.query, other.query)) {
+        if (!equals(this.query, other.query)) {
             return false;
         }
-        if (!Objects.equals(this.target, other.target)) {
+        if (!equals(this.target, other.target)) {
             return false;
         }
         return true;
@@ -122,4 +122,15 @@ public class Match {
     public IAtom getTargetAtom() {
         return target;
     }
+
+		private int hashCode(Object obj) {
+			if (obj == null) return 0;
+			return obj.hashCode();
+		}
+
+		private boolean equals(Object a, Object b) {
+			if (a == null && b == null) return true;
+			if (a == null || b == null) return false;
+			return (a.equals(b));
+		}
 }

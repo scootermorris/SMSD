@@ -25,7 +25,7 @@ package org.openscience.smsd.algorithm.vflib.builder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
+// import java.util.Objects;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.smsd.algorithm.matchers.AtomMatcher;
 import org.openscience.smsd.algorithm.vflib.interfaces.IEdge;
@@ -44,7 +44,7 @@ public class NodeBuilder implements INode {
     @Override
     public int hashCode() {
         int hash = 5;
-        hash = 17 * hash + Objects.hashCode(this.matcher);
+        hash = 17 * hash + hashCode(this.matcher);
         return hash;
     }
 
@@ -57,7 +57,7 @@ public class NodeBuilder implements INode {
             return false;
         }
         final NodeBuilder other = (NodeBuilder) obj;
-        if (!Objects.equals(this.matcher, other.matcher)) {
+        if (!equals(this.matcher, other.matcher)) {
             return false;
         }
         return true;
@@ -129,4 +129,15 @@ public class NodeBuilder implements INode {
     public void addNeighbor(NodeBuilder node) {
         neighborsList.add(node);
     }
+
+		private int hashCode(Object obj) {
+			if (obj == null) return 0;
+			return obj.hashCode();
+		}
+
+		private boolean equals(Object a, Object b) {
+			if (a == null && b == null) return true;
+			if (a == null || b == null) return false;
+			return (a.equals(b));
+		}
 }

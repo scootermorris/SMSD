@@ -96,7 +96,7 @@ final public class MCSSThread implements Callable<LinkedBlockingQueue<IAtomConta
         /*
          * Store final solution here
          */
-        LinkedBlockingQueue<IAtomContainer> mcss = new LinkedBlockingQueue<>();
+        LinkedBlockingQueue<IAtomContainer> mcss = new LinkedBlockingQueue<IAtomContainer>();
 
         logger.debug("Calling MCSSTask " + taskNumber + " with " + mcssList.size() + " items");
         System.out.println("Calling MCSSTask " + taskNumber + " with " + mcssList.size() + " items");
@@ -104,12 +104,12 @@ final public class MCSSThread implements Callable<LinkedBlockingQueue<IAtomConta
         IAtomContainer querySeed = mcssList.get(0);
         long calcTime = startTime;
 
-        ConcurrentLinkedQueue<IAtomContainer> seeds = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<IAtomContainer> seeds = new ConcurrentLinkedQueue<IAtomContainer>();
         try {
             /*
              * Local Seeds
              */
-            Set<Fragment> localSeeds = new TreeSet<>();
+            Set<Fragment> localSeeds = new TreeSet<Fragment>();
             int minSeedSize = querySeed.getAtomCount();
 
             for (int index = 1; index < mcssList.size(); index++) {
@@ -172,7 +172,7 @@ final public class MCSSThread implements Callable<LinkedBlockingQueue<IAtomConta
 
             while (!seeds.isEmpty()) {
                 IAtomContainer fragmentMCS = seeds.poll();
-                localSeeds = new TreeSet<>();
+                localSeeds = new TreeSet<Fragment>();
                 logger.debug("Potential MULTIPLE " + getMCSSSmiles(fragmentMCS));
                 Collection<Fragment> fragmentsFromMCS;
                 for (int index = 0; index < mcssList.size(); index++) {
@@ -293,7 +293,7 @@ final public class MCSSThread implements Callable<LinkedBlockingQueue<IAtomConta
     }
 
     private synchronized Collection<Fragment> getMCSS(BaseMapping comparison) {
-        Set<Fragment> matchList = new HashSet<>();
+        Set<Fragment> matchList = new HashSet<Fragment>();
         for (AtomAtomMapping mapping : comparison.getAllAtomMapping()) {
             IAtomContainer match;
             try {
