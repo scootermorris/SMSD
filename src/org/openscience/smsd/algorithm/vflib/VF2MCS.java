@@ -24,15 +24,28 @@ package org.openscience.smsd.algorithm.vflib;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.annotations.TestMethod;
 import org.openscience.cdk.exception.CDKException;
+import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.cdk.tools.ILoggingTool;
 import org.openscience.cdk.tools.LoggingToolFactory;
 import org.openscience.smsd.AtomAtomMapping;
+import org.openscience.smsd.algorithm.vflib.interfaces.IMapper;
+import org.openscience.smsd.algorithm.vflib.interfaces.INode;
+import org.openscience.smsd.algorithm.vflib.interfaces.IQuery;
+import org.openscience.smsd.algorithm.vflib.map.VFMCSMapper;
+import org.openscience.smsd.algorithm.vflib.query.QueryCompiler;
+import org.openscience.smsd.algorithm.vflib.seeds.MCSSeedGenerator;
+import org.openscience.smsd.interfaces.Algorithm;
 import org.openscience.smsd.interfaces.IResults;
 
 /**
@@ -50,8 +63,8 @@ import org.openscience.smsd.interfaces.IResults;
 public final class VF2MCS extends BaseMCS implements IResults {
 
     private final List<AtomAtomMapping> allAtomMCS;
-    private final static ILoggingTool logger =
-            LoggingToolFactory.createLoggingTool(VF2MCS.class);
+    private final static ILoggingTool logger
+            = LoggingToolFactory.createLoggingTool(VF2MCS.class);
 
     /**
      * Constructor for an extended VF Algorithm for the MCS search
@@ -60,91 +73,101 @@ public final class VF2MCS extends BaseMCS implements IResults {
      * @param target
      * @param shouldMatchBonds bond match
      * @param shouldMatchRings ring match
+     * @param matchAtomType
      */
-    public VF2MCS(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings) {
-        super(source, target, shouldMatchBonds, shouldMatchRings);
+    public VF2MCS(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
+        super(source, target, shouldMatchBonds, shouldMatchRings, matchAtomType);
+        boolean timoutVF = searchVFMappings();
 
-
-        addVFMatchesMappings();
         /*
          * An extension is triggered if its mcs solution is smaller than reactant and product. An enrichment is
          * triggered if its mcs solution is equal to reactant or product size.
          *
          *
          */
-        if (isEnrichmentRequired() || isExtensionRequired()) {
+        if (!timoutVF) {
 
             List<Map<Integer, Integer>> mcsVFSeeds = new ArrayList<Map<Integer, Integer>>();
 
             /*
              * Copy VF based MCS solution in the seed
              */
-
             int counter = 0;
             for (Map<Integer, Integer> vfMapping : allLocalMCS) {
                 mcsVFSeeds.add(counter, vfMapping);
                 counter++;
             }
 
-
             /*
              * Clean VF mapping data
              */
-
             allLocalMCS.clear();
             allLocalAtomAtomMapping.clear();
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            CompletionService<List<AtomAtomMapping>> cs = new ExecutorCompletionService<List<AtomAtomMapping>>(executor);
+            MCSSeedGenerator mcsSeedGeneratorUIT = new MCSSeedGenerator(source, target, isBondMatchFlag(), isMatchRings(), matchAtomType, Algorithm.CDKMCS);
+            MCSSeedGenerator mcsSeedGeneratorKoch = new MCSSeedGenerator(source, target, isBondMatchFlag(), isMatchRings(), matchAtomType, Algorithm.MCSPlus);
+            int jobCounter = 0;
+            cs.submit(mcsSeedGeneratorUIT);
+            jobCounter++;
+            cs.submit(mcsSeedGeneratorKoch);
+            jobCounter++;
 
             /*
              * Generate the UIT based MCS seeds
              */
-
-            List<Map<Integer, Integer>> mcsSeeds = new ArrayList<Map<Integer, Integer>>();
-
-            List<AtomAtomMapping> mcsUITCliques;
-            mcsUITCliques = addUIT();
-            for (AtomAtomMapping mapping : mcsUITCliques) {
-                Map<Integer, Integer> map = new TreeMap<Integer, Integer>();
-                map.putAll(mapping.getMappingsIndex());
-                mcsSeeds.add(map);
+            Set<Map<Integer, Integer>> mcsSeeds = new HashSet<Map<Integer, Integer>>();
+            /*
+             * Collect the results
+             */
+            for (int i = 0; i < jobCounter; i++) {
+                List<AtomAtomMapping> chosen;
+                try {
+                    chosen = cs.take().get();
+                    for (AtomAtomMapping mapping : chosen) {
+                        Map<Integer, Integer> map = new TreeMap<Integer, Integer>();
+                        map.putAll(mapping.getMappingsByIndex());
+                        mcsSeeds.add(map);
+                    }
+                } catch (InterruptedException ex) {
+                    logger.error(Level.SEVERE, null, ex);
+                } catch (ExecutionException ex) {
+                    logger.error(Level.SEVERE, null, ex);
+                }
             }
-
-            List<AtomAtomMapping> mcsKochCliques;
-            mcsKochCliques = addKochCliques();
-            for (AtomAtomMapping mapping : mcsKochCliques) {
-                Map<Integer, Integer> map = new TreeMap<Integer, Integer>();
-                map.putAll(mapping.getMappingsIndex());
-                mcsSeeds.add(map);
+            executor.shutdown();
+            // Wait until all threads are finish
+            while (!executor.isTerminated()) {
             }
+            System.gc();
 
+//            long stopTimeSeeds = System.nanoTime();
+//            System.out.println("done seeds " + (stopTimeSeeds - startTimeSeeds));
             /*
              * Store largest MCS seeds generated from MCSPlus and UIT
              */
-            int solSize = 0;
+            int solutionSize = 0;
             counter = 0;
             List<Map<Integer, Integer>> cleanedMCSSeeds = new ArrayList<Map<Integer, Integer>>();
+//            System.out.println("mergin  UIT & KochCliques");
             if (!mcsSeeds.isEmpty()) {
-                for (Iterator<Map<Integer, Integer>> it = mcsSeeds.iterator(); it.hasNext();) {
-                    Map<Integer, Integer> map = it.next();
-                    if (map.size() > solSize) {
-                        solSize = map.size();
+                for (Map<Integer, Integer> map : mcsSeeds) {
+                    if (map.size() > solutionSize) {
+                        solutionSize = map.size();
                         cleanedMCSSeeds.clear();
                         counter = 0;
                     }
                     if (!map.isEmpty()
-                            && map.size() == solSize
+                            && map.size() == solutionSize
                             && !hasClique(map, cleanedMCSSeeds)) {
                         cleanedMCSSeeds.add(counter, map);
                         counter++;
                     }
                 }
             }
-
-            /*
-             * Store MCS seeds generated from VF
-             */
-            for (Iterator<Map<Integer, Integer>> it = mcsVFSeeds.iterator(); it.hasNext();) {
-                Map<Integer, Integer> map = it.next();
+            for (Map<Integer, Integer> map : mcsVFSeeds) {
                 if (!map.isEmpty()
+                        && map.size() >= solutionSize
                         && !hasClique(map, cleanedMCSSeeds)) {
                     cleanedMCSSeeds.add(counter, map);
                     counter++;
@@ -161,9 +184,9 @@ public final class VF2MCS extends BaseMCS implements IResults {
             try {
                 extendCliquesWithMcGregor(cleanedMCSSeeds);
             } catch (CDKException ex) {
-                java.util.logging.Logger.getLogger(VF2MCS.class.getName()).log(Level.SEVERE, null, ex);
+                logger.error(Level.SEVERE, null, ex);
             } catch (IOException ex) {
-                java.util.logging.Logger.getLogger(VF2MCS.class.getName()).log(Level.SEVERE, null, ex);
+                logger.error(Level.SEVERE, null, ex);
             }
 
             /*
@@ -175,8 +198,7 @@ public final class VF2MCS extends BaseMCS implements IResults {
             /*
              * Integerate the solutions
              */
-
-            solSize = 0;
+            solutionSize = 0;
             counter = 0;
             this.allAtomMCS = new ArrayList<AtomAtomMapping>();
 
@@ -186,13 +208,13 @@ public final class VF2MCS extends BaseMCS implements IResults {
             if (!allLocalAtomAtomMapping.isEmpty()) {
                 for (int i = 0; i < allLocalAtomAtomMapping.size(); i++) {
                     AtomAtomMapping atomMCSMap = allLocalAtomAtomMapping.get(i);
-                    if (atomMCSMap.getCount() > solSize) {
-                        solSize = atomMCSMap.getCount();
+                    if (atomMCSMap.getCount() > solutionSize) {
+                        solutionSize = atomMCSMap.getCount();
                         allAtomMCS.clear();
                         counter = 0;
                     }
                     if (!atomMCSMap.isEmpty()
-                            && atomMCSMap.getCount() == solSize) {
+                            && atomMCSMap.getCount() == solutionSize) {
                         allAtomMCS.add(counter, atomMCSMap);
                         counter++;
                     }
@@ -202,7 +224,6 @@ public final class VF2MCS extends BaseMCS implements IResults {
             /*
              * Clear the local solution after storing it into mcs solutions
              */
-
             allLocalMCS.clear();
             allLocalAtomAtomMapping.clear();
 
@@ -232,6 +253,50 @@ public final class VF2MCS extends BaseMCS implements IResults {
         }
     }
 
+    /*
+     * Note: VF MCS will search for cliques which will match the types. Mcgregor will extend the cliques depending of
+     * the bond type (sensitive and insensitive).
+     */
+    protected synchronized boolean searchVFMappings() {
+//        System.out.println("searchVFMappings ");
+        IQuery queryCompiler;
+        IMapper mapper;
+
+        if (!(source instanceof IQueryAtomContainer)
+                && !(target instanceof IQueryAtomContainer)) {
+            countR = getReactantMol().getAtomCount();
+            countP = getProductMol().getAtomCount();
+        }
+
+        if (source instanceof IQueryAtomContainer) {
+            queryCompiler = new QueryCompiler((IQueryAtomContainer) source).compile();
+            mapper = new VFMCSMapper(queryCompiler);
+            List<Map<INode, IAtom>> maps = mapper.getMaps(getProductMol());
+            if (maps != null) {
+                vfLibSolutions.addAll(maps);
+            }
+            setVFMappings(true, queryCompiler);
+
+        } else if (countR <= countP) {//isBondMatchFlag()
+            queryCompiler = new QueryCompiler(this.source, true, isMatchRings(), isMatchAtomType()).compile();
+            mapper = new VFMCSMapper(queryCompiler);
+            List<Map<INode, IAtom>> map = mapper.getMaps(this.target);
+            if (map != null) {
+                vfLibSolutions.addAll(map);
+            }
+            setVFMappings(true, queryCompiler);
+        } else {
+            queryCompiler = new QueryCompiler(this.target, true, isMatchRings(), isMatchAtomType()).compile();
+            mapper = new VFMCSMapper(queryCompiler);
+            List<Map<INode, IAtom>> map = mapper.getMaps(this.source);
+            if (map != null) {
+                vfLibSolutions.addAll(map);
+            }
+            setVFMappings(false, queryCompiler);
+        }
+        return mapper.isTimeout();
+    }
+
     /**
      * Constructor for an extended VF Algorithm for the MCS search
      *
@@ -239,7 +304,7 @@ public final class VF2MCS extends BaseMCS implements IResults {
      * @param target
      */
     public VF2MCS(IQueryAtomContainer source, IQueryAtomContainer target) {
-        this(source, target, false, false);
+        this(source, target, true, true, true);
     }
 
     /**

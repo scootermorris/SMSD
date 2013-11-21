@@ -28,6 +28,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.exception.InvalidSmilesException;
+import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.smiles.SmilesGenerator;
 import org.openscience.cdk.smiles.SmilesParser;
@@ -41,18 +42,8 @@ import org.openscience.smsd.mcss.MCSS;
  */
 public class TestMCSS {
 
-    /**
-     * @param args the command line arguments
-     */
     @Test
-    public static void main(String[] args) {
-        case1();
-        case2();
-        case3();
-        case4();
-    }
-
-    public static void case1() {
+    public void case1() {
         HashMap<String, String> map = new HashMap<String, String>();
         SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
         //Data
@@ -75,15 +66,16 @@ public class TestMCSS {
         long startTime = Calendar.getInstance().getTimeInMillis();
         MCSS mcss = new MCSS(jobs, JobType.MULTIPLE, 5);
         for (IAtomContainer ac : mcss.getCalculateMCSS()) {
-            System.out.println("Result MCS " + getMCSSSmiles(ac));
+            //System.out.println("Result MCS " + getMCSSSmiles(ac));
             Assert.assertEquals(31, ac.getAtomCount());
         }
         long endCalcTime = Calendar.getInstance().getTimeInMillis();
 
-        System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
+        //System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
     }
 
-    public static void case2() {
+    @Test
+    public void case2() {
         HashMap<String, String> map = new HashMap<String, String>();
         SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
         // Data
@@ -93,7 +85,6 @@ public class TestMCSS {
         map.put("3", "CCCSNNN");
         map.put("4", "CCCC=NNN");
 
-
         List<IAtomContainer> jobs = new ArrayList<IAtomContainer>();
         for (String s : map.values()) {
             try {
@@ -105,15 +96,16 @@ public class TestMCSS {
         long startTime = Calendar.getInstance().getTimeInMillis();
         MCSS mcss = new MCSS(jobs, JobType.MULTIPLE, 5);
         for (IAtomContainer ac : mcss.getCalculateMCSS()) {
-            System.out.println("Result MCS " + getMCSSSmiles(ac));
+            //System.out.println("Result MCS " + getMCSSSmiles(ac));
             Assert.assertEquals(3, ac.getAtomCount());
         }
         long endCalcTime = Calendar.getInstance().getTimeInMillis();
 
-        System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
+        //System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
     }
 
-    public static void case3() {
+    @Test
+    public void case3() {
         HashMap<String, String> map = new HashMap<String, String>();
         SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
         // Data
@@ -122,7 +114,6 @@ public class TestMCSS {
         map.put("2", "CCC-NNN");
         map.put("3", "CCCSNNN");
 
-
         List<IAtomContainer> jobs = new ArrayList<IAtomContainer>();
         for (String s : map.values()) {
             try {
@@ -134,15 +125,16 @@ public class TestMCSS {
         long startTime = Calendar.getInstance().getTimeInMillis();
         MCSS mcss = new MCSS(jobs, JobType.MULTIPLE, 5);
         for (IAtomContainer ac : mcss.getCalculateMCSS()) {
-            System.out.println("Result MCS " + getMCSSSmiles(ac));
+            //System.out.println("Result MCS " + getMCSSSmiles(ac));
             Assert.assertEquals(3, ac.getAtomCount());
         }
         long endCalcTime = Calendar.getInstance().getTimeInMillis();
 
-        System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
+        //System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
     }
 
-    public static void case4() {
+    @Test
+    public void case4() {
         HashMap<String, String> map = new HashMap<String, String>();
         SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
         // Data
@@ -152,7 +144,6 @@ public class TestMCSS {
         map.put("3", "CCCSNNN");
         map.put("4", "SSSCCC");
         map.put("5", "CSSSCSNNN");
-
 
         List<IAtomContainer> jobs = new ArrayList<IAtomContainer>();
         for (String s : map.values()) {
@@ -165,15 +156,49 @@ public class TestMCSS {
         long startTime = Calendar.getInstance().getTimeInMillis();
         MCSS mcss = new MCSS(jobs, JobType.SINGLE, 5);
         for (IAtomContainer ac : mcss.getCalculateMCSS()) {
-            System.out.println("Result MCS " + getMCSSSmiles(ac));
+            //System.out.println("Result MCS " + getMCSSSmiles(ac));
             Assert.assertEquals(1, ac.getAtomCount());
         }
         long endCalcTime = Calendar.getInstance().getTimeInMillis();
 
-        System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
+        //System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
     }
 
-    public static String getMCSSSmiles(IAtomContainer ac) {
+    @Test
+    public void case5() {
+        HashMap<String, String> map = new HashMap<String, String>();
+        SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
+        // Data
+
+        map.put("1", "O=C(OC1OC(CO)C(O)C(O)C1(O))Cc3c[nH]c2ccccc23");
+        map.put("2", "O=C(OC1C(O)C(O)C(O)C(O)C1(O))Cc3c[nH]c2ccccc23");
+
+        List<IAtomContainer> jobs = new ArrayList<IAtomContainer>();
+        for (String s : map.values()) {
+            try {
+                IAtomContainer ac = sp.parseSmiles(s);
+                int i = 1;
+                for (IAtom a : ac.atoms()) {
+                    a.setID(i + "");
+                    i++;
+                }
+                jobs.add(ac);
+            } catch (InvalidSmilesException ex) {
+                Logger.getLogger(TestMCSS.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        long startTime = Calendar.getInstance().getTimeInMillis();
+        MCSS mcss = new MCSS(jobs, JobType.SINGLE, 5, true, true, false);
+        for (IAtomContainer ac : mcss.getCalculateMCSS()) {
+            //System.out.println("Result MCS " + getMCSSSmiles(ac));
+            Assert.assertEquals(21, ac.getAtomCount());
+        }
+        long endCalcTime = Calendar.getInstance().getTimeInMillis();
+
+        //System.out.println("Total time: " + (endCalcTime - startTime) + "ms");
+    }
+
+    public String getMCSSSmiles(IAtomContainer ac) {
         SmilesGenerator g = new SmilesGenerator();
         g.setUseAromaticityFlag(true);
         return g.createSMILES(ac);

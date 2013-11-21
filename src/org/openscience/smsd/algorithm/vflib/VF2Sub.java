@@ -40,24 +40,23 @@ import org.openscience.smsd.algorithm.vflib.interfaces.INode;
 import org.openscience.smsd.algorithm.vflib.interfaces.IQuery;
 import org.openscience.smsd.algorithm.vflib.map.VFMapper;
 import org.openscience.smsd.algorithm.vflib.query.QueryCompiler;
-import org.openscience.smsd.global.TimeOut;
 import org.openscience.smsd.helper.MoleculeInitializer;
 import org.openscience.smsd.interfaces.IResults;
-import org.openscience.smsd.tools.TimeManager;
 
 /**
  * This class should be used to find MCS between source graph and target graph.
  *
  * First the algorithm runs VF lib {@link org.openscience.cdk.smsd.algorithm.vflib.map.VFMCSMapper} and reports MCS
- * between run source and target graphs. Then these solutions are extended using McGregor {@link org.openscience.cdk.smsd.algorithm.mcgregor.McGregor}
- * algorithm where ever required.
+ * between run source and target graphs. Then these solutions are extended using McGregor
+ * {@link org.openscience.cdk.smsd.algorithm.mcgregor.McGregor} algorithm where ever required.
  *
- * @cdk.module smsd @cdk.githash
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.algorithm.vflib.VF2SubTest")
-public class VF2Sub extends MoleculeInitializer implements IResults {
+public class VF2Sub implements IResults {
 
     private List<AtomAtomMapping> allAtomMCS = null;
     private List<AtomAtomMapping> allAtomMCSCopy = null;
@@ -66,29 +65,15 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
     private List<Map<INode, IAtom>> vfLibSolutions = null;
     private final IAtomContainer source;
     private final IAtomContainer target;
-    private final TimeManager timeManager;
     private final boolean shouldMatchRings;
     private final boolean matchBonds;
+    private boolean matchAtomType;
     private int bestHitSize = -1;
     private int countR = 0;
     private int countP = 0;
     private boolean isSubgraph = false;
-    private final static ILoggingTool Logger =
-            LoggingToolFactory.createLoggingTool(VF2Sub.class);
-
-    /**
-     * @return the timeout
-     */
-    protected synchronized double getTimeout() {
-        return TimeOut.getInstance().getVFTimeout();
-    }
-
-    /**
-     * @return the timeManager
-     */
-    protected synchronized TimeManager getTimeManager() {
-        return timeManager;
-    }
+    private final static ILoggingTool Logger
+            = LoggingToolFactory.createLoggingTool(VF2Sub.class);
 
     /**
      * Constructor for an extended VF Algorithm for the MCS search
@@ -97,26 +82,19 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
      * @param target
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      */
-    public VF2Sub(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings) {
+    public VF2Sub(IAtomContainer source, IAtomContainer target,
+            boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.source = source;
         this.target = target;
         allAtomMCS = new ArrayList<AtomAtomMapping>();
         allAtomMCSCopy = new ArrayList<AtomAtomMapping>();
         allMCS = new ArrayList<Map<Integer, Integer>>();
         allMCSCopy = new ArrayList<Map<Integer, Integer>>();
-        TimeOut tmo = TimeOut.getInstance();
-        tmo.setCDKMCSTimeOut(0.15);
         this.shouldMatchRings = shouldMatchRings;
         this.matchBonds = shouldMatchBonds;
-        this.timeManager = new TimeManager();
-        if (this.shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
+        this.matchAtomType = matchAtomType;
         this.isSubgraph = findSubgraph();
     }
 
@@ -133,18 +111,8 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
         allAtomMCSCopy = new ArrayList<AtomAtomMapping>();
         allMCS = new ArrayList<Map<Integer, Integer>>();
         allMCSCopy = new ArrayList<Map<Integer, Integer>>();
-        TimeOut tmo = TimeOut.getInstance();
-        tmo.setCDKMCSTimeOut(0.15);
         this.shouldMatchRings = true;
         this.matchBonds = true;
-        this.timeManager = new TimeManager();
-        if (this.shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
         this.isSubgraph = findSubgraph();
     }
 
@@ -153,12 +121,12 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
      *
      */
     private boolean findSubgraph() {
-        if (!testIsSubgraphHeuristics(source, target, this.matchBonds)) {
+        if (!MoleculeInitializer.testIsSubgraphHeuristics(source, target, this.matchBonds)) {
             return false;
         }
-        searchVFMappings();
+        boolean timoutVF = searchVFMappings();
         boolean flag = isExtensionFeasible();
-        if (flag && !vfLibSolutions.isEmpty()) {
+        if (flag && !vfLibSolutions.isEmpty() && !timoutVF) {
             try {
                 searchMcGregorMapping();
             } catch (CDKException ex) {
@@ -173,16 +141,13 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
         }
         return !allAtomMCS.isEmpty()
                 && allAtomMCS.iterator().next().getCount()
-                == getReactantMol().getAtomCount() ? true : false;
+                == getReactantMol().getAtomCount();
 
     }
 
     private synchronized boolean isExtensionFeasible() {
         int commonAtomCount = checkCommonAtomCount(getReactantMol(), getProductMol());
-        if (commonAtomCount > bestHitSize) {
-            return true;
-        }
-        return false;
+        return commonAtomCount > bestHitSize;
     }
 
     private boolean hasMap(Map<Integer, Integer> maps, List<Map<Integer, Integer>> mapGlobal) {
@@ -239,9 +204,9 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
      * Note: VF will search for core hits. Mcgregor will extend the cliques depending of the bond type (sensitive and
      * insensitive).
      */
-    private synchronized void searchVFMappings() {
+    private synchronized boolean searchVFMappings() {
 //        System.out.println("searchVFMappings ");
-        IQuery queryCompiler = null;
+        IQuery queryCompiler;
         IMapper mapper = null;
 
         if (!(source instanceof IQueryAtomContainer) && !(target instanceof IQueryAtomContainer)) {
@@ -259,7 +224,7 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
             }
             setVFMappings(true, queryCompiler);
         } else if (countR <= countP) {
-            queryCompiler = new QueryCompiler(this.source, this.matchBonds, this.shouldMatchRings).compile();
+            queryCompiler = new QueryCompiler(this.source, this.matchBonds, this.shouldMatchRings, this.matchAtomType).compile();
             mapper = new VFMapper(queryCompiler);
             List<Map<INode, IAtom>> maps = mapper.getMaps(getProductMol());
             if (maps != null) {
@@ -271,7 +236,7 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
 //        System.out.println("Sol size " + vfLibSolutions.iterator().next().size());
 //        System.out.println("MCSSize " + bestHitSize);
 //        System.out.println("After Sol count " + allMCSCopy.size());
-
+        return mapper != null ? mapper.isTimeout() : true;
     }
 
     private synchronized void searchMcGregorMapping() throws CDKException, IOException {
@@ -279,12 +244,12 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
         boolean ROPFlag = true;
         for (Map<Integer, Integer> firstPassMappings : allMCSCopy) {
             Map<Integer, Integer> extendMapping = new TreeMap<Integer, Integer>(firstPassMappings);
-            McGregor mgit = null;
+            McGregor mgit;
             if (source instanceof IQueryAtomContainer) {
-                mgit = new McGregor((IQueryAtomContainer) source, target, mappings, this.matchBonds, this.shouldMatchRings);
+                mgit = new McGregor((IQueryAtomContainer) source, target, mappings, this.matchBonds, this.shouldMatchRings, this.matchAtomType);
             } else {
                 extendMapping.clear();
-                mgit = new McGregor(target, source, mappings, this.matchBonds, this.shouldMatchRings);
+                mgit = new McGregor(target, source, mappings, this.matchBonds, this.shouldMatchRings, this.matchAtomType);
                 ROPFlag = false;
                 for (Map.Entry<Integer, Integer> map : firstPassMappings.entrySet()) {
                     extendMapping.put(map.getValue(), map.getKey());
@@ -293,12 +258,6 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
             //Start McGregor search
             mgit.startMcGregorIteration(mgit.getMCSSize(), extendMapping);
             mappings = mgit.getMappings();
-            mgit = null;
-
-            if (isTimeOut()) {
-                Logger.debug("\nVFLibMCS hit by timeout in McGregor");
-                break;
-            }
         }
 //        System.out.println("\nSol count after MG" + mappings.size());
         setMcGregorMappings(ROPFlag, mappings);
@@ -313,10 +272,10 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
             Map<Integer, Integer> indexindexMapping = new TreeMap<Integer, Integer>();
 
             for (Map.Entry<INode, IAtom> mapping : solution.entrySet()) {
-                IAtom qAtom = null;
-                IAtom tAtom = null;
-                Integer qIndex = 0;
-                Integer tIndex = 0;
+                IAtom qAtom;
+                IAtom tAtom;
+                Integer qIndex;
+                Integer tIndex;
 
                 if (RONP) {
                     qAtom = query.getAtom(mapping.getKey());
@@ -364,10 +323,10 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
             AtomAtomMapping atomatomMapping = new AtomAtomMapping(source, target);
             Map<Integer, Integer> indexindexMapping = new TreeMap<Integer, Integer>();
             for (int index = 0; index < mapping.size(); index += 2) {
-                IAtom qAtom = null;
-                IAtom tAtom = null;
-                Integer qIndex = 0;
-                Integer tIndex = 0;
+                IAtom qAtom;
+                IAtom tAtom;
+                Integer qIndex;
+                Integer tIndex;
 
                 if (RONP) {
                     qAtom = getReactantMol().getAtom(mapping.get(index));
@@ -412,14 +371,6 @@ public class VF2Sub extends MoleculeInitializer implements IResults {
 
     private synchronized IAtomContainer getProductMol() {
         return target;
-    }
-
-    public synchronized boolean isTimeOut() {
-        if (getTimeout() > -1 && getTimeManager().getElapsedTimeInMinutes() > getTimeout()) {
-            TimeOut.getInstance().setTimeOutFlag(true);
-            return true;
-        }
-        return false;
     }
 
     /**

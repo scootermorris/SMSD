@@ -1,5 +1,4 @@
-SMSD is a Java based software library for calculating Maximum Common Subgraph (MCS) between small molecules. 
-This will help us to find similarity/distance between two molecules. 
+SMSD is a Java based software library for calculating Maximum Common Subgraph (MCS) between small molecules. This enables help us to find similarity/distance between two molecules. 
 MCS is also used for screening drug like compounds by hitting molecules, which share common subgraph (substructure).
 
 Usage Terms and Condition
@@ -33,3 +32,28 @@ S. A. Rahman, M. Bashton, G. L. Holliday, R. Schrader and J. M. Thornton, Small 
 Wish you a happy coding!
 
 Author: Syed Asad Rahman <asad@ebi.ac.uk>
+
+
+To build SMSD code:
+
+You need path to the CDK (https://github.com/cdk) directory as SMSD depends on the CDK for processing the Chemical information.
+
+
+Step 1, for cleaning and building the SMSD project:
+
+ant -f /Users/Asad/Software/GITROOT/asad/SMSD/nbbuild.xml clean jar
+
+Step 2, for releasing the code:
+
+ant -f /Users/Asad/Software/GITROOT/asad/SMSD release-smsd-zip
+
+
+To Run SMSD code:
+
+On Unix/Linux:
+
+sh SMSD.sh
+
+On Windows/DOS:
+
+cmd SMSD.bat or SMSD.bat

@@ -45,7 +45,8 @@ import org.openscience.cdk.tools.manipulator.AtomContainerManipulator;
 
 /**
  *
- * @cdk.module smsd @cdk.githash
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
@@ -61,8 +62,8 @@ public class MoleculeInitializer {
      * @throws CDKException if there is a problem in ring perception or aromaticity detection, which is usually related
      * to a timeout in the ring finding code.
      */
-    private static final ILoggingTool Logger =
-            LoggingToolFactory.createLoggingTool(MoleculeInitializer.class);
+    private static final ILoggingTool Logger
+            = LoggingToolFactory.createLoggingTool(MoleculeInitializer.class);
 
     /**
      *
@@ -118,7 +119,6 @@ public class MoleculeInitializer {
 
             // do all ring perception
             AllRingsFinder arf = new AllRingsFinder();
-            arf.setTimeout(90000);
             IRingSet allRings = null;
             try {
                 allRings = arf.findAllRings(atomContainer);
@@ -210,7 +210,7 @@ public class MoleculeInitializer {
                 AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(atomContainer);
                 CDKHueckelAromaticityDetector.detectAromaticity(atomContainer);
 
-            } catch (Exception e) {
+            } catch (CDKException e) {
                 Logger.debug(e.toString());
                 throw new CDKException(e.toString(), e);
             }
@@ -228,7 +228,7 @@ public class MoleculeInitializer {
      * @param shouldMatchBonds
      * @return true if the subgraph ac1 has atom chance to be atom subgraph of ac2
      */
-    protected synchronized static boolean testIsSubgraphHeuristics(IAtomContainer ac1, IAtomContainer ac2, boolean shouldMatchBonds) {
+    public synchronized static boolean testIsSubgraphHeuristics(IAtomContainer ac1, IAtomContainer ac2, boolean shouldMatchBonds) {
 
         int ac1SingleBondCount = 0;
         int ac1DoubleBondCount = 0;
@@ -239,7 +239,7 @@ public class MoleculeInitializer {
         int ac2TripleBondCount = 0;
         int ac2AromaticBondCount = 0;
 
-        IBond bond = null;
+        IBond bond;
 
         if (shouldMatchBonds) {
             for (int i = 0; i < ac1.getBondCount(); i++) {
@@ -284,7 +284,7 @@ public class MoleculeInitializer {
             }
         }
 
-        IAtom atom = null;
+        IAtom atom;
         Map<String, Integer> map = new HashMap<String, Integer>();
         for (int i = 0; i < ac1.getAtomCount(); i++) {
             atom = ac1.getAtom(i);

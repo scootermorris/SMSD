@@ -28,8 +28,9 @@ import org.openscience.cdk.interfaces.IBond;
 import org.openscience.cdk.isomorphism.matchers.IQueryBond;
 
 /**
- * Checks if a bond is matching between query and target molecules. 
- * @cdk.module smsd 
+ * Checks if a bond is matching between query and target molecules.
+ *
+ * @cdk.module smsd
  * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
@@ -71,7 +72,8 @@ public final class DefaultBondMatcher implements BondMatcher {
     public boolean matches(IBond targetBond) {
         if (this.queryBond != null && queryBond instanceof IQueryBond) {
             return ((IQueryBond) queryBond).matches(targetBond);
-        } else if (!isBondMatchFlag() || (isBondMatchFlag() && isBondTypeMatch(targetBond))) {
+        } else if ((queryBond != null && targetBond != null) && (!isBondMatchFlag()
+                || (isBondMatchFlag() && isBondTypeMatch(targetBond)))) {
             return true;
         }
         return false;

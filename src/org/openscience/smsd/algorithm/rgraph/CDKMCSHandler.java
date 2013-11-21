@@ -36,20 +36,18 @@ import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IAtomContainerSet;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.smsd.AtomAtomMapping;
-import org.openscience.smsd.helper.FinalMappings;
-import org.openscience.smsd.helper.MoleculeInitializer;
 import org.openscience.smsd.interfaces.IResults;
 
 /**
- * This class acts as a handler class for CDKMCS algorithm
- * {@link org.openscience.cdk.smsd.algorithm.cdk.CDKMCS}.
+ * This class acts as a handler class for CDKMCS algorithm {@link org.openscience.cdk.smsd.algorithm.cdk.CDKMCS}.
  *
- * @cdk.module smsd @cdk.githash
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.algorithm.cdk.CDKMCSHandlerTest")
-public class CDKMCSHandler extends MoleculeInitializer implements IResults {
+public class CDKMCSHandler implements IResults {
 
 //    //~--- fields -------------------------------------------------------------
     private final IAtomContainer source;
@@ -59,6 +57,8 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
     private final List<Map<Integer, Integer>> allMCS;
     private final boolean shouldMatchRings;
     private final boolean shouldMatchBonds;
+    private final boolean matchAtomType;
+    private boolean timeout;
 
     //~--- constructors -------------------------------------------------------
     /*
@@ -70,22 +70,18 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
      * @param target
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      */
-    public CDKMCSHandler(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings) {
+    public CDKMCSHandler(IAtomContainer source, IAtomContainer target,
+            boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.source = source;
         this.target = target;
         this.shouldMatchRings = shouldMatchRings;
         this.shouldMatchBonds = shouldMatchBonds;
+        this.matchAtomType = matchAtomType;
         this.allAtomMCS = Collections.synchronizedList(new ArrayList<AtomAtomMapping>());
         this.allMCS = Collections.synchronizedList(new ArrayList<Map<Integer, Integer>>());
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
-        searchMCS();
+        this.timeout = searchMCS();
     }
 
     /**
@@ -98,16 +94,10 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
         this.target = target;
         this.shouldMatchRings = true;
         this.shouldMatchBonds = true;
+        this.matchAtomType = true;
         this.allAtomMCS = Collections.synchronizedList(new ArrayList<AtomAtomMapping>());
         this.allMCS = Collections.synchronizedList(new ArrayList<Map<Integer, Integer>>());
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
-        searchMCS();
+        this.timeout = searchMCS();
     }
 
     /**
@@ -115,26 +105,27 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
      *
      */
     @TestMethod("testSearchMCS")
-    private synchronized void searchMCS() {
-
+    private synchronized boolean searchMCS() {
         CDKRMapHandler rmap = new CDKRMapHandler();
+        List<Map<Integer, Integer>> solutions;
         try {
 
-            if (source.getAtomCount() > target.getAtomCount()) {
+            if (source.getAtomCount() >= target.getAtomCount()) {
                 rOnPFlag = true;
-                rmap.calculateOverlapsAndReduce(source, target, shouldMatchBonds, shouldMatchRings);
+                solutions = rmap.calculateOverlapsAndReduce(source, target, shouldMatchBonds, shouldMatchRings, matchAtomType);
             } else {
                 rOnPFlag = false;
-                rmap.calculateOverlapsAndReduce(target, source, shouldMatchBonds, shouldMatchRings);
+                solutions = rmap.calculateOverlapsAndReduce(target, source, shouldMatchBonds, shouldMatchRings, matchAtomType);
             }
 
-            setAllMapping();
+            setAllMapping(solutions);
             setAllAtomMapping();
 
         } catch (CDKException e) {
             rmap = null;
             System.err.println("WARNING: " + e.getMessage());
         }
+        return rmap.isTimeout();
     }
 
     /**
@@ -143,14 +134,15 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
      * @param mcss
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      * @return IAtomContainer Set
      * @throws CDKException
      */
     protected synchronized IAtomContainerSet getUncommon(IAtomContainer mol, IAtomContainer mcss,
-            boolean shouldMatchBonds, boolean shouldMatchRings) throws CDKException {
+            boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) throws CDKException {
         ArrayList<Integer> atomSerialsToDelete = new ArrayList<Integer>();
 
-        List<List<CDKRMap>> matches = CDKMCS.getSubgraphAtomsMaps(mol, mcss, shouldMatchBonds, shouldMatchRings);
+        List<List<CDKRMap>> matches = CDKMCS.getSubgraphAtomsMaps(mol, mcss, shouldMatchBonds, shouldMatchRings, matchAtomType);
         List<CDKRMap> mapList = matches.get(0);
         for (Object o : mapList) {
             CDKRMap rmap = (CDKRMap) o;
@@ -176,13 +168,12 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
     }
 
     //~--- get methods --------------------------------------------------------
-    private synchronized void setAllMapping() {
+    private synchronized void setAllMapping(List<Map<Integer, Integer>> solutions) {
 
         //System.out.println("Output of the final FinalMappings: ");
         try {
-            List<Map<Integer, Integer>> sol = FinalMappings.getInstance().getFinalMapping();
             int counter = 0;
-            for (Map<Integer, Integer> final_solution : sol) {
+            for (Map<Integer, Integer> final_solution : solutions) {
                 TreeMap<Integer, Integer> atomMappings = new TreeMap<Integer, Integer>();
                 for (Map.Entry<Integer, Integer> Solutions : final_solution.entrySet()) {
 
@@ -252,5 +243,19 @@ public class CDKMCSHandler extends MoleculeInitializer implements IResults {
             return allAtomMCS.iterator().next();
         }
         return new AtomAtomMapping(source, target);
+    }
+
+    /**
+     * @return the timeout
+     */
+    public boolean isTimeout() {
+        return timeout;
+    }
+
+    /**
+     * @param timeout the timeout to set
+     */
+    public void setTimeout(boolean timeout) {
+        this.timeout = timeout;
     }
 }

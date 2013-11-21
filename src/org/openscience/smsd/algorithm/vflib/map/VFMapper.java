@@ -61,7 +61,7 @@ import org.openscience.smsd.algorithm.vflib.interfaces.INode;
 import org.openscience.smsd.algorithm.vflib.interfaces.IQuery;
 import org.openscience.smsd.algorithm.vflib.interfaces.IState;
 import org.openscience.smsd.algorithm.vflib.query.QueryCompiler;
-import org.openscience.smsd.global.TimeOut;
+import org.openscience.smsd.tools.IterationManager;
 
 /**
  * This class finds MCS between query and target molecules using VF2 algorithm.
@@ -76,13 +76,8 @@ public class VFMapper implements IMapper {
 
     private final IQuery query;
     private final List<Map<INode, IAtom>> maps;
-
-    /**
-     * @return the timeout
-     */
-    protected synchronized static double getTimeout() {
-        return TimeOut.getInstance().getVFTimeout();
-    }
+    private IterationManager iterationManager = null;
+    private boolean timeout = false;
 
     /**
      *
@@ -98,10 +93,43 @@ public class VFMapper implements IMapper {
      * @param queryMolecule
      * @param bondMatcher
      * @param ringMatcher
+     * @param matchAtomType
      */
-    public VFMapper(IAtomContainer queryMolecule, boolean bondMatcher, boolean ringMatcher) {
-        this.query = new QueryCompiler(queryMolecule, bondMatcher, ringMatcher).compile();
+    public VFMapper(IAtomContainer queryMolecule, boolean bondMatcher, boolean ringMatcher, boolean matchAtomType) {
+        this.query = new QueryCompiler(queryMolecule, bondMatcher, ringMatcher, matchAtomType).compile();
         this.maps = new ArrayList<Map<INode, IAtom>>();
+    }
+
+    /**
+     * @return the timeout
+     */
+    @Override
+    public boolean isTimeout() {
+        return this.timeout;
+    }
+
+    private boolean checkTimeout() {
+        if (getIterationManager().isMaxIteration()) {
+            this.timeout = true;
+//            System.out.println("VF SUB iterations " + getIterationManager().getCounter());
+            return true;
+        }
+        getIterationManager().increment();
+        return false;
+    }
+
+    /**
+     * @return the iterationManager
+     */
+    private IterationManager getIterationManager() {
+        return iterationManager;
+    }
+
+    /**
+     * @param iterationManager the iterationManager to set
+     */
+    private void setIterationManager(IterationManager iterationManager) {
+        this.iterationManager = iterationManager;
     }
 
     /**
@@ -111,6 +139,7 @@ public class VFMapper implements IMapper {
      */
     @Override
     public boolean hasMap(IAtomContainer target) {
+        setIterationManager(new IterationManager((this.query.countNodes() + target.getAtomCount())));
         IState state = new VFState(query, target);
         maps.clear();
         return mapFirst(state);
@@ -121,6 +150,7 @@ public class VFMapper implements IMapper {
      */
     @Override
     public List<Map<INode, IAtom>> getMaps(IAtomContainer target) {
+        setIterationManager(new IterationManager((this.query.countNodes() + target.getAtomCount())));
         IState state = new VFState(query, target);
         maps.clear();
         mapAll(state);
@@ -135,6 +165,7 @@ public class VFMapper implements IMapper {
      */
     @Override
     public Map<INode, IAtom> getFirstMap(IAtomContainer target) {
+        setIterationManager(new IterationManager((this.query.countNodes() + target.getAtomCount())));
         IState state = new VFState(query, target);
         maps.clear();
         mapFirst(state);
@@ -146,38 +177,38 @@ public class VFMapper implements IMapper {
      */
     @Override
     public int countMaps(IAtomContainer target) {
+        setIterationManager(new IterationManager((this.query.countNodes() + target.getAtomCount())));
         IState state = new VFState(query, target);
         maps.clear();
         mapAll(state);
         return maps.size();
     }
 
-    private boolean mapAll(IState state) {
+    private void mapAll(IState state) {
         if (state.isDead()) {
-            return false;
-        }
-        if (state.isGoal()) {
-            return true;
+            return;
         }
 
-        boolean found = false;
-        while (state.hasNextCandidate()) {
+        if (hasMap(state.getMap())) {
+            state.backTrack();
+        }
+
+        if (state.isGoal()) {
+            Map<INode, IAtom> map = state.getMap();
+            if (!hasMap(map)) {
+                maps.add(state.getMap());
+            }
+            return;
+        }
+
+        while (state.hasNextCandidate() && !checkTimeout()) {
             Match candidate = state.nextCandidate();
             if (state.isMatchFeasible(candidate)) {
                 IState nextState = state.nextState(candidate);
-                found = mapAll(nextState);
-                if (found) {
-                    Map<INode, IAtom> map = state.getMap();
-                    if (!hasMap(map)) {
-                        maps.add(map);
-                    }
-                    found = false;
-                    continue;
-                }
+                mapAll(nextState);
                 nextState.backTrack();
             }
         }
-        return found;
     }
 
     private boolean mapFirst(IState state) {

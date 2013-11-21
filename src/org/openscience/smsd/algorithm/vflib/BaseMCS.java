@@ -26,10 +26,8 @@ package org.openscience.smsd.algorithm.vflib;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Stack;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import org.openscience.cdk.exception.CDKException;
@@ -40,63 +38,45 @@ import org.openscience.cdk.tools.ILoggingTool;
 import org.openscience.cdk.tools.LoggingToolFactory;
 import org.openscience.smsd.AtomAtomMapping;
 import org.openscience.smsd.algorithm.mcgregor.McGregor;
-import org.openscience.smsd.algorithm.mcsplus.BKKCKCF;
-import org.openscience.smsd.algorithm.mcsplus.GenerateCompatibilityGraph;
-import org.openscience.smsd.algorithm.rgraph.CDKRMapHandler;
-import org.openscience.smsd.algorithm.vflib.interfaces.IMapper;
 import org.openscience.smsd.algorithm.vflib.interfaces.INode;
 import org.openscience.smsd.algorithm.vflib.interfaces.IQuery;
-import org.openscience.smsd.algorithm.vflib.map.VFMCSMapper;
-import org.openscience.smsd.algorithm.vflib.query.QueryCompiler;
-import org.openscience.smsd.global.TimeOut;
-import org.openscience.smsd.helper.FinalMappings;
-import org.openscience.smsd.helper.MoleculeInitializer;
-import org.openscience.smsd.tools.TimeManager;
 
 /**
  * This class should be used to find MCS between source graph and target graph.
  *
  * First the algorithm runs VF lib {@link org.openscience.cdk.smsd.algorithm.vflib.map.VFMCSMapper} and reports MCS
- * between run source and target graphs. Then these solutions are extended using McGregor {@link org.openscience.cdk.smsd.algorithm.mcgregor.McGregor}
- * algorithm where ever required.
+ * between run source and target graphs. Then these solutions are extended using McGregor
+ * {@link org.openscience.cdk.smsd.algorithm.mcgregor.McGregor} algorithm where ever required.
  *
- * @cdk.module smsd @cdk.githash
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
-public class BaseMCS extends MoleculeInitializer {
+public class BaseMCS {
 
-    private int countR = 0;
-    private int countP = 0;
-    private final IAtomContainer source;
-    private final IAtomContainer target;
-    private final TimeManager timeManager;
+    protected int countR;
+    protected int countP;
+    protected final IAtomContainer source;
+    protected final IAtomContainer target;
     private final boolean shouldMatchRings;
     private final boolean matchBonds;
-    private final List<Map<INode, IAtom>> vfLibSolutions;
+    private final boolean matchAtomType;
+    protected final List<Map<INode, IAtom>> vfLibSolutions;
     final List<Map<Integer, Integer>> allLocalMCS;
     final List<AtomAtomMapping> allLocalAtomAtomMapping;
-    private final static ILoggingTool Logger =
-            LoggingToolFactory.createLoggingTool(BaseMCS.class);
+    private final static ILoggingTool Logger
+            = LoggingToolFactory.createLoggingTool(BaseMCS.class);
 
-    BaseMCS(IAtomContainer source, IAtomContainer target, boolean matchBonds, boolean shouldMatchRings) {
+    BaseMCS(IAtomContainer source, IAtomContainer target, boolean matchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.allLocalAtomAtomMapping = new ArrayList<AtomAtomMapping>();
-        this.timeManager = new TimeManager();
         this.allLocalMCS = new ArrayList<Map<Integer, Integer>>();
         this.shouldMatchRings = shouldMatchRings;
         this.matchBonds = matchBonds;
+        this.matchAtomType = matchAtomType;
         this.vfLibSolutions = new ArrayList<Map<INode, IAtom>>();
         this.source = source;
         this.target = target;
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-                Logger.error(ex);
-            }
-        }
-
     }
 
     /**
@@ -116,151 +96,12 @@ public class BaseMCS extends MoleculeInitializer {
         return false;
     }
 
-    protected synchronized List<AtomAtomMapping> addKochCliques() {
-//        System.out.println("addKochCliques ");
-        List<AtomAtomMapping> allCliqueAtomMCS = new ArrayList<AtomAtomMapping>();
-        try {
-            IAtomContainer ac1;
-            IAtomContainer ac2;
-            boolean flagExchange = false;
-            if (source.getAtomCount() < target.getAtomCount()) {
-                ac1 = source;
-                ac2 = target;
-            } else {
-                flagExchange = true;
-                ac1 = target;
-                ac2 = source;
-            }
-            GenerateCompatibilityGraph gcg = new GenerateCompatibilityGraph(ac1, ac2, isBondMatchFlag(), isMatchRings());
-            List<Integer> comp_graph_nodes = gcg.getCompGraphNodes();
-
-            List<Integer> cEdges = gcg.getCEgdes();
-            List<Integer> dEdges = gcg.getDEgdes();
-
-            BKKCKCF init = new BKKCKCF(comp_graph_nodes, cEdges, dEdges);
-            Stack<List<Integer>> maxCliqueSet = init.getMaxCliqueSet();
-            //clear all the compatibility graph content
-            gcg.clear();
-
-            /*
-             * Sort biggest clique to smallest
-             */
-            Collections.sort(maxCliqueSet, new Comparator<List<Integer>>() {
-
-                @Override
-                public int compare(List<Integer> a1, List<Integer> a2) {
-                    return a2.size() - a1.size(); // assumes you want biggest to smallest
-                }
-            });
-
-            while (!maxCliqueSet.empty()) {
-                List<Integer> peek = maxCliqueSet.peek();
-                AtomAtomMapping atomatomMapping = new AtomAtomMapping(source, target);
-
-                for (Integer value : peek) {
-                    int[] index = getIndex(value.intValue(), comp_graph_nodes);
-                    Integer qIndex = index[0];
-                    Integer tIndex = index[1];
-                    if (qIndex != -1 && tIndex != -1) {
-                        IAtom qAtom;
-                        IAtom tAtom;
-                        if (flagExchange) {
-                            qAtom = source.getAtom(tIndex);
-                            tAtom = target.getAtom(qIndex);
-                        } else {
-                            qAtom = source.getAtom(qIndex);
-                            tAtom = target.getAtom(tIndex);
-                        }
-                        atomatomMapping.put(qAtom, tAtom);
-                    } else {
-                        try {
-                            throw new CDKException("Atom index pointing to -1");
-                        } catch (CDKException ex) {
-                            Logger.error(Level.SEVERE, null, ex);
-                        }
-                    }
-                }
-
-                if (!atomatomMapping.isEmpty()) {
-                    allCliqueAtomMCS.add(atomatomMapping);
-                }
-                maxCliqueSet.pop();
-            }
-        } catch (IOException ex) {
-            Logger.error(Level.SEVERE, null, ex);
-        }
-
-        return allCliqueAtomMCS;
-    }
-
     /**
      *
-     * @return
+     * @param refinedMCSSeeds
+     * @throws CDKException
+     * @throws IOException
      */
-    protected synchronized List<AtomAtomMapping> addUIT() {
-        CDKRMapHandler rmap = new CDKRMapHandler();
-        boolean rOnPFlag = false;
-        List<Map<Integer, Integer>> sol = null;
-        try {
-
-            if (source.getAtomCount() > target.getAtomCount()) {
-                rOnPFlag = true;//isBondMatchFlag()
-                rmap.calculateOverlapsAndReduce(source, target, true, isMatchRings());
-            } else {
-                rOnPFlag = false;
-                rmap.calculateOverlapsAndReduce(target, source, true, isMatchRings());
-            }
-            sol = FinalMappings.getInstance().getFinalMapping();
-
-        } catch (CDKException e) {
-//            System.err.println("WARNING: graphContainer: most probably time out error ");
-        }
-        return setUITMappings(rOnPFlag, sol);
-    }
-
-    /*
-     * Note: VF MCS will search for cliques which will match the types. Mcgregor will extend the cliques depending of
-     * the bond type (sensitive and insensitive).
-     */
-    protected synchronized void addVFMatchesMappings() {
-//        System.out.println("addVFMatchesMappings ");
-        IQuery queryCompiler;
-        IMapper mapper;
-
-        if (!(source instanceof IQueryAtomContainer)
-                && !(target instanceof IQueryAtomContainer)) {
-            countR = getReactantMol().getAtomCount();
-            countP = getProductMol().getAtomCount();
-        }
-
-        if (source instanceof IQueryAtomContainer) {
-            queryCompiler = new QueryCompiler((IQueryAtomContainer) source).compile();
-            mapper = new VFMCSMapper(queryCompiler);
-            List<Map<INode, IAtom>> maps = mapper.getMaps(getProductMol());
-            if (maps != null) {
-                vfLibSolutions.addAll(maps);
-            }
-            setVFMappings(true, queryCompiler);
-
-        } else if (countR <= countP) {//isBondMatchFlag()
-            queryCompiler = new QueryCompiler(this.source, isBondMatchFlag(), isMatchRings()).compile();
-            mapper = new VFMCSMapper(queryCompiler);
-            List<Map<INode, IAtom>> map = mapper.getMaps(this.target);
-            if (map != null) {
-                vfLibSolutions.addAll(map);
-            }
-            setVFMappings(true, queryCompiler);
-        } else {
-            queryCompiler = new QueryCompiler(this.target, isBondMatchFlag(), isMatchRings()).compile();
-            mapper = new VFMCSMapper(queryCompiler);
-            List<Map<INode, IAtom>> map = mapper.getMaps(this.source);
-            if (map != null) {
-                vfLibSolutions.addAll(map);
-            }
-            setVFMappings(false, queryCompiler);
-        }
-    }
-
     protected synchronized void extendCliquesWithMcGregor(List<Map<Integer, Integer>> refinedMCSSeeds) throws CDKException, IOException {
         List<List<Integer>> mappings = new ArrayList<List<Integer>>();
         boolean ROPFlag = true;
@@ -268,13 +109,13 @@ public class BaseMCS extends MoleculeInitializer {
             Map<Integer, Integer> extendMapping = new TreeMap<Integer, Integer>(firstPassMappings);
             McGregor mgit;
             if (source instanceof IQueryAtomContainer) {
-                mgit = new McGregor((IQueryAtomContainer) source, target, mappings, isBondMatchFlag(), isMatchRings());
+                mgit = new McGregor((IQueryAtomContainer) source, target, mappings, isBondMatchFlag(), isMatchRings(), isMatchAtomType());
             } else {
                 if (countR > countP) {
-                    mgit = new McGregor(source, target, mappings, isBondMatchFlag(), isMatchRings());
+                    mgit = new McGregor(source, target, mappings, isBondMatchFlag(), isMatchRings(), isMatchAtomType());
                 } else {
                     extendMapping.clear();
-                    mgit = new McGregor(target, source, mappings, isBondMatchFlag(), isMatchRings());
+                    mgit = new McGregor(target, source, mappings, isBondMatchFlag(), isMatchRings(), isMatchAtomType());
                     ROPFlag = false;
                     for (Map.Entry<Integer, Integer> map : firstPassMappings.entrySet()) {
                         extendMapping.put(map.getValue(), map.getKey());
@@ -284,11 +125,6 @@ public class BaseMCS extends MoleculeInitializer {
             //Start McGregor search
             mgit.startMcGregorIteration(mgit.getMCSSize(), extendMapping);
             mappings = mgit.getMappings();
-
-            if (isTimeOut()) {
-                Logger.debug("\nMcGregorIteration timeout");
-                break;
-            }
         }
 //        System.out.println("\nSol count after MG " + mappings.size());
         setMcGregorMappings(ROPFlag, mappings);
@@ -296,7 +132,12 @@ public class BaseMCS extends MoleculeInitializer {
 //        System.out.println("MCSSize " + vfMCSSize + "\n");
     }
 
-    private synchronized void setVFMappings(boolean RONP, IQuery query) {
+    /**
+     *
+     * @param RONP
+     * @param query
+     */
+    protected synchronized void setVFMappings(boolean RONP, IQuery query) {
         /*
          * Sort biggest clique to smallest
          */
@@ -341,52 +182,6 @@ public class BaseMCS extends MoleculeInitializer {
                 getLocalMCSSolution().add(indexindexMapping);
             }
         }
-    }
-
-    private synchronized List<AtomAtomMapping> setUITMappings(boolean RONP, List<Map<Integer, Integer>> sol) {
-        /*
-         * Sort biggest clique to smallest
-         */
-        List<AtomAtomMapping> allCliqueAtomMCS = new ArrayList<AtomAtomMapping>();
-        /*
-         * Sort biggest clique to smallest
-         */
-        Collections.sort(sol, new Map1ValueComparator(SortOrder.DESCENDING));
-        for (Map<Integer, Integer> solution : sol) {
-            AtomAtomMapping atomatomMapping = new AtomAtomMapping(source, target);
-
-            for (Integer qAtomIndex : solution.keySet()) {
-                IAtom qAtom = null;
-                IAtom tAtom = null;
-                int qIndex = -1;
-                int tIndex = -1;
-
-                if (RONP) {
-                    qAtom = source.getAtom(qAtomIndex);
-                    tAtom = target.getAtom(solution.get(qAtomIndex));
-                } else {
-                    tAtom = target.getAtom(qAtomIndex);
-                    qAtom = source.getAtom(solution.get(qAtomIndex));
-                }
-
-                qIndex = source.getAtomNumber(qAtom);
-                tIndex = target.getAtomNumber(tAtom);
-                if (qIndex != -1 && tIndex != -1) {
-                    atomatomMapping.put(qAtom, tAtom);
-                } else {
-                    try {
-                        throw new CDKException("Atom index pointing to -1");
-                    } catch (CDKException ex) {
-                        Logger.error(Level.SEVERE, null, ex);
-                    }
-                }
-            }
-
-            if (!atomatomMapping.isEmpty()) {
-                allCliqueAtomMCS.add(atomatomMapping);
-            }
-        }
-        return allCliqueAtomMCS;
     }
 
     private synchronized void setMcGregorMappings(boolean RONP, List<List<Integer>> mappings) throws CDKException {
@@ -439,19 +234,6 @@ public class BaseMCS extends MoleculeInitializer {
 
     }
 
-    private int[] getIndex(int cliqueIndex, List<Integer> comp_graph_nodes) {
-        int[] v = new int[2];
-        v[0] = -1;
-        v[1] = -1;
-        for (int i = 0; i < comp_graph_nodes.size(); i += 3) {
-            if (cliqueIndex == comp_graph_nodes.get(i + 2)) {
-                v[0] = comp_graph_nodes.get(i);
-                v[1] = comp_graph_nodes.get(i + 1);
-            }
-        }
-        return v;
-    }
-
     protected synchronized IAtomContainer getReactantMol() {
         return source;
     }
@@ -460,33 +242,11 @@ public class BaseMCS extends MoleculeInitializer {
         return target;
     }
 
-    protected synchronized boolean isTimeOut() {
-        if (getTimeout() > -1 && getTimeManager().getElapsedTimeInMinutes() > getTimeout()) {
-            TimeOut.getInstance().setTimeOutFlag(true);
-            return true;
-        }
-        return false;
-    }
-
     /**
      * @return the shouldMatchRings
      */
     protected boolean isMatchRings() {
         return shouldMatchRings;
-    }
-
-    /**
-     * @return the timeManager
-     */
-    protected synchronized TimeManager getTimeManager() {
-        return timeManager;
-    }
-
-    /**
-     * @return the timeout
-     */
-    protected synchronized double getTimeout() {
-        return TimeOut.getInstance().getVFTimeout();
     }
 
     /**
@@ -517,7 +277,7 @@ public class BaseMCS extends MoleculeInitializer {
                 maxSize = map.size();
             }
         }
-        return this.source.getAtomCount() > maxSize && this.target.getAtomCount() > maxSize ? true : false;
+        return this.source.getAtomCount() > maxSize && this.target.getAtomCount() > maxSize;
     }
 
     protected synchronized boolean isExtensionRequired() {
@@ -528,10 +288,7 @@ public class BaseMCS extends MoleculeInitializer {
                 maxSize = map.size();
             }
         }
-        if (commonAtomCount > maxSize) {
-            return true;
-        }
-        return false;
+        return commonAtomCount > maxSize;
     }
 
     private synchronized int checkCommonAtomCount(IAtomContainer reactantMolecule, IAtomContainer productMolecule) {
@@ -550,13 +307,10 @@ public class BaseMCS extends MoleculeInitializer {
         return common;
     }
 
-    protected synchronized boolean isEnrichmentRequired() {
-        int maxSize = 0;
-        for (Map<Integer, Integer> map : allLocalMCS) {
-            if (map.size() > maxSize) {
-                maxSize = map.size();
-            }
-        }
-        return this.source.getAtomCount() == maxSize || this.target.getAtomCount() == maxSize ? true : false;
+    /**
+     * @return the matchAtomType
+     */
+    public boolean isMatchAtomType() {
+        return matchAtomType;
     }
 }

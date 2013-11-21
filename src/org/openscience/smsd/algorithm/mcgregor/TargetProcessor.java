@@ -24,6 +24,7 @@
  */
 package org.openscience.smsd.algorithm.mcgregor;
 
+import java.util.Collections;
 import java.util.List;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.interfaces.IAtomContainer;
@@ -31,31 +32,32 @@ import org.openscience.cdk.interfaces.IBond;
 import org.openscience.cdk.isomorphism.matchers.IQueryBond;
 
 /**
- * Class to handle mappings of target molecule based on the query. @cdk.module smsd @cdk.githash
+ * Class to handle mappings of target molecule based on the query.
+ *
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.algorithm.mcgregor.TargetProcessorTest")
 public class TargetProcessor {
 
-    private List<String> cTab1Copy;
-    private List<String> cTab2Copy;
-    private String[] signArray;
+    private final List<String> cTab2Copy;
+    private final String[] signArray;
     //number of remaining molecule A bonds after the clique search, which are
     //neighbors of the MCS
     private int neighborBondNumB = 0;
     //number of remaining molecule A bonds after the clique search, which aren't
     //neighbors
     private int setBondNumB = 0;
-    private List<Integer> iBondNeighborsB;
-    private List<String> cBondNeighborsB;
-    private int newNeighborNumA;
-    private List<Integer> newINeighborsA;
-    private List<String> newCNeighborsA;
+    private final List<Integer> iBondNeighborsB;
+    private final List<String> cBondNeighborsB;
+    private final int newNeighborNumA;
+    private final List<Integer> newINeighborsA;
+    private final List<String> newCNeighborsA;
 
     /**
      *
-     * @param cTab1Copy
      * @param cTab2Copy
      * @param signArray
      * @param neighbor_bondnum_B
@@ -67,7 +69,6 @@ public class TargetProcessor {
      * @param newCNeighborsA
      */
     protected TargetProcessor(
-            List<String> cTab1Copy,
             List<String> cTab2Copy,
             String[] signArray,
             int neighbor_bondnum_B,
@@ -78,7 +79,6 @@ public class TargetProcessor {
             List<Integer> newINeighborsA,
             List<String> newCNeighborsA) {
 
-        this.cTab1Copy = cTab1Copy;
         this.cTab2Copy = cTab2Copy;
         this.signArray = signArray;
         this.neighborBondNumB = neighbor_bondnum_B;
@@ -99,11 +99,9 @@ public class TargetProcessor {
             List<Integer> mapped_atoms,
             int counter) {
 
-
         int unmapped_numB = unmapped_atoms_molB.size();
         boolean bond_considered = false;
         boolean normal_bond = true;
-
 
         for (int atomIndex = 0; atomIndex < target.getBondCount(); atomIndex++) {
 
@@ -112,10 +110,10 @@ public class TargetProcessor {
             IBond bond = target.getBond(atomIndex);
             Integer order = null;
             if (!(bond instanceof IQueryBond)) {
-                order = (bond.getOrder().ordinal() + 1);
+                order = (bond.getOrder().numeric());
             } else {
                 IQueryBond queryBond = (IQueryBond) bond;
-                order = queryBond.getOrder() != null ? (queryBond.getOrder().ordinal() + 1) : null;
+                order = queryBond.getOrder() != null ? (queryBond.getOrder().numeric()) : null;
             }
 
             for (int b = 0; b < unmapped_numB; b++) {
@@ -163,7 +161,6 @@ public class TargetProcessor {
             List<String> new_c_bond_setB) {
 
         //The special signs must be transfered to the corresponding atoms of molecule A
-
         boolean bond_considered = false;
         boolean normal_bond = true;
         for (int atomIndex = 0; atomIndex < setNumB; atomIndex++) {
@@ -382,22 +379,6 @@ public class TargetProcessor {
 
     /**
      *
-     * @return
-     */
-    protected List<String> getCTab1() {
-        return this.cTab1Copy;
-    }
-
-    /**
-     *
-     * @return
-     */
-    protected List<String> getCTab2() {
-        return this.cTab2Copy;
-    }
-
-    /**
-     *
      * @return number of remaining molecule A bonds after the clique search, which are neighbors of the MCS
      *
      */
@@ -414,10 +395,10 @@ public class TargetProcessor {
     }
 
     List<Integer> getIBondNeighboursB() {
-        return this.iBondNeighborsB;
+        return Collections.unmodifiableList(this.iBondNeighborsB);
     }
 
     List<String> getCBondNeighborsB() {
-        return this.cBondNeighborsB;
+        return Collections.unmodifiableList(this.cBondNeighborsB);
     }
 }

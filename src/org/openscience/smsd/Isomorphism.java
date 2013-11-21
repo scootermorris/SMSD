@@ -27,6 +27,7 @@ import java.io.Serializable;
 import java.util.logging.Level;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.annotations.TestMethod;
+import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.cdk.tools.ILoggingTool;
@@ -35,32 +36,36 @@ import org.openscience.smsd.algorithm.mcsplus.MCSPlusHandler;
 import org.openscience.smsd.algorithm.rgraph.CDKMCSHandler;
 import org.openscience.smsd.algorithm.single.SingleMappingHandler;
 import org.openscience.smsd.algorithm.vflib.VF2MCS;
-import org.openscience.smsd.global.TimeOut;
+import org.openscience.smsd.helper.MoleculeInitializer;
 import org.openscience.smsd.interfaces.Algorithm;
-import org.openscience.smsd.interfaces.ITimeOut;
+import static org.openscience.smsd.interfaces.Algorithm.CDKMCS;
+import static org.openscience.smsd.interfaces.Algorithm.DEFAULT;
+import static org.openscience.smsd.interfaces.Algorithm.MCSPlus;
+import static org.openscience.smsd.interfaces.Algorithm.VFLibMCS;
 
 /**
- * <p>This class implements the Isomorphism- a multipurpose structure comparison
- * tool. It allows users to, i) find the maximal common substructure(s) (MCS);
- * ii) perform the mapping of a substructure in another structure, and; iii) map
+ * <p>
+ * This class implements the Isomorphism- a multipurpose structure comparison tool. It allows users to, i) find the
+ * maximal common substructure(s) (MCS); ii) perform the mapping of a substructure in another structure, and; iii) map
  * two isomorphic structures.</p>
  *
- * <p>It also comes with various published algorithms. The user is free to
- * choose his favorite algorithm to perform MCS or substructure search. For
- * example:</p> <OL> <lI>0: Default, <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3:
- * CDKMCS </OL> <p>It also has a set of robust chemical filters (i.e. bond
- * energy, fragment count, stereo & bond match) to sort the reported MCS
- * solutions in a chemically relevant manner. Each comparison can be made with
- * or without using the bond sensitive mode and with implicit or explicit
- * hydrogens.</p>
+ * <p>
+ * It also comes with various published algorithms. The user is free to choose his favorite algorithm to perform MCS or
+ * substructure search. For example:</p> <OL> <lI>0: Default, <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3: CDKMCS </OL>
+ * <p>
+ * It also has a set of robust chemical filters (i.e. bond energy, fragment count, stereo & bond match) to sort the
+ * reported MCS solutions in a chemically relevant manner. Each comparison can be made with or without using the bond
+ * sensitive mode and with implicit or explicit hydrogens.</p>
  *
- * <p>If you are using <font color="#FF0000">Isomorphism, please cite Rahman
+ * <p>
+ * If you are using <font color="#FF0000">Isomorphism, please cite Rahman
  * <i>et.al. 2009</i></font> {
  *
  * @cdk.cite SMSD2009}. The Isomorphism algorithm is described in this paper.
  * </p>
  *
- * <p>An example for <b>MCS search</b>:</p> <font color="#003366">  <pre>
+ * <p>
+ * An example for <b>MCS search</b>:</p> <font color="#003366">  <pre>
  *
  *
  * SmilesParser sp = new SmilesParser(DefaultChemObjectBuilder.getInstance());
@@ -72,7 +77,7 @@ import org.openscience.smsd.interfaces.ITimeOut;
  * //Algorithm is VF2MCS
  * //Bond Sensitive is set True
  * //Ring Match is set True
- * Isomorphism comparison = new Isomorphism(query, target, Algorithm.VFLibMCS, true, true);
+ * Isomorphism comparison = new Isomorphism(query, target, Algorithm.VFLibMCS, true, true, true);
  * // set chemical filter true
  * comparison.setChemFilters(true, true, true);
  * //Get similarity score
@@ -82,7 +87,7 @@ import org.openscience.smsd.interfaces.ITimeOut;
  * // Print the mapping between molecules
  * System.out.println(" Mappings: ");
  * for (AtomAtomMapping atomatomMapping : comparison.getAllAtomMapping()) {
- *      for (Map.Entry<IAtom, IAtom> mapping : atomatomMapping.getMappings().entrySet()) {
+ *      for (Map.Entry<IAtom, IAtom> mapping : atomatomMapping.getMappingsByAtoms().entrySet()) {
  *          IAtom sourceAtom = mapping.getKey();
  *          IAtom targetAtom = mapping.getValue();
  *          System.out.println(sourceAtom.getSymbol() + " " + targetAtom.getSymbol());
@@ -103,40 +108,33 @@ import org.openscience.smsd.interfaces.ITimeOut;
  *
  */
 @TestClass("org.openscience.cdk.smsd.factory.SubStructureSearchAlgorithmsTest")
-public final class Isomorphism extends BaseMapping implements ITimeOut, Serializable {
+public final class Isomorphism extends BaseMapping implements Serializable {
 
-    private final static ILoggingTool logger =
-            LoggingToolFactory.createLoggingTool(Isomorphism.class);
+    private final static ILoggingTool logger
+            = LoggingToolFactory.createLoggingTool(Isomorphism.class);
     static final long serialVersionUID = 0x24845e5c5ae877L;
-    private Algorithm algorithmType;
-    private double bondSensitiveCDKMCSTimeOut = 0.15;//mins
-    private double bondInSensitiveCDKMCSTimeOut = 2.00;//mins
-    private double bondSensitiveMCSPlusTimeOut = 0.15;//mins
-    private double bondInSensitiveMCSPlusTimeOut = 2.00;//mins
-    private double bondSensitiveVFTimeOut = 5.00;//mins
-    private double bondInSensitiveVFTimeOut = 5.00;//mins
+    private final Algorithm algorithmType;
+    private double bondSensitiveMcGregorOut = -1;//mins
+    private double bondInSensitiveMcGregor = -1;//mins
 
     /**
      * Initialize query and target molecules.
      *
-     * Note: Here its assumed that hydrogens are implicit and user has called
-     * these two methods percieveAtomTypesAndConfigureAtoms and
-     * CDKAromicityDetector before initializing calling this method.
+     * Note: Here its assumed that hydrogens are implicit and user has called these two methods
+     * percieveAtomTypesAndConfigureAtoms and CDKAromicityDetector before initializing calling this method.
      *
      * @param query query molecule
-     * @param target target molecule This is the algorithm factory and entry
-     * port for all the MCS algorithm in the Isomorphism supported algorithm
-     * {@link org.openscience.cdk.smsd.interfaces.Algorithm} types: <OL> <lI>0:
-     * Default, <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3: CDKMCS </OL>
-     * @param algorithmType
-     * {@link org.openscience.cdk.smsd.interfaces.Algorithm}
+     * @param target target molecule This is the algorithm factory and entry port for all the MCS algorithm in the
+     * Isomorphism supported algorithm {@link org.openscience.cdk.smsd.interfaces.Algorithm} types: <OL> <lI>0: Default,
+     * <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3: CDKMCS </OL>
+     * @param algorithmType {@link org.openscience.cdk.smsd.interfaces.Algorithm}
      */
     @TestMethod("testIsomorphismTest")
     public Isomorphism(
             IQueryAtomContainer query,
             IAtomContainer target,
             Algorithm algorithmType) {
-        super(true, true, query, target);
+        super(true, true, true, query, target);
         this.algorithmType = algorithmType;
         mcsBuilder(query, target);
         setSubgraph(isSubgraph());
@@ -145,19 +143,17 @@ public final class Isomorphism extends BaseMapping implements ITimeOut, Serializ
     /**
      * Initialize query and target molecules.
      *
-     * Note: Here its assumed that hydrogens are implicit and user has called
-     * these two methods percieveAtomTypesAndConfigureAtoms and
-     * CDKAromicityDetector before initializing calling this method.
+     * Note: Here its assumed that hydrogens are implicit and user has called these two methods
+     * percieveAtomTypesAndConfigureAtoms and CDKAromicityDetector before initializing calling this method.
      *
      * @param query query mol
-     * @param target target mol This is the algorithm factory and entry port for
-     * all the MCS algorithm in the Isomorphism supported algorithm
-     * {@link org.openscience.cdk.smsd.interfaces.Algorithm} types: <OL> <lI>0:
-     * Default, <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3: CDKMCS </OL>
-     * @param algorithmType
-     * {@link org.openscience.cdk.smsd.interfaces.Algorithm}
+     * @param target target mol This is the algorithm factory and entry port for all the MCS algorithm in the
+     * Isomorphism supported algorithm {@link org.openscience.cdk.smsd.interfaces.Algorithm} types: <OL> <lI>0: Default,
+     * <lI>1: MCSPlus, <lI>2: VFLibMCS, <lI>3: CDKMCS </OL>
+     * @param algorithmType {@link org.openscience.cdk.smsd.interfaces.Algorithm}
      * @param bondTypeFlag Match bond types (i.e. double to double etc)
      * @param matchRings Match ring atoms and ring size
+     * @param matchAtomType
      */
     @TestMethod("testIsomorphismTest")
     public Isomorphism(
@@ -165,16 +161,22 @@ public final class Isomorphism extends BaseMapping implements ITimeOut, Serializ
             IAtomContainer target,
             Algorithm algorithmType,
             boolean bondTypeFlag,
-            boolean matchRings) {
-        super(bondTypeFlag, matchRings, query, target);
+            boolean matchRings,
+            boolean matchAtomType) {
+        super(bondTypeFlag, matchRings, matchAtomType, query, target);
         this.algorithmType = algorithmType;
-        setTime(bondTypeFlag);
         mcsBuilder(getQueryContainer(), getTargetContainer());
         setSubgraph(isSubgraph());
     }
 
     private synchronized void mcsBuilder(IAtomContainer mol1, IAtomContainer mol2) {
-
+        if (isMatchRings()) {
+            try {
+                MoleculeInitializer.initializeMolecule(mol1);
+                MoleculeInitializer.initializeMolecule(mol2);
+            } catch (CDKException ex) {
+            }
+        }
         int rBondCount = mol1.getBondCount();
         int pBondCount = mol2.getBondCount();
 
@@ -221,23 +223,35 @@ public final class Isomorphism extends BaseMapping implements ITimeOut, Serializ
         }
     }
 
-    private synchronized void cdkMCSAlgorithm() {
+    private synchronized boolean cdkMCSAlgorithm() {
         CDKMCSHandler mcs;
-        mcs = new CDKMCSHandler(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings());
+        mcs = new CDKMCSHandler(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings(), isMatchAtomType());
         clearMaps();
         getMCSList().addAll(mcs.getAllAtomMapping());
+        return mcs.isTimeout();
     }
 
-    private synchronized void mcsPlusAlgorithm() {
+    private synchronized boolean mcsPlusAlgorithm() {
         MCSPlusHandler mcs;
-        mcs = new MCSPlusHandler(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings());
+        mcs = new MCSPlusHandler(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings(), isMatchAtomType());
         clearMaps();
         getMCSList().addAll(mcs.getAllAtomMapping());
+        return mcs.isTimeout();
+    }
+
+    private synchronized boolean substructureAlgorithm() throws CDKException {
+        Substructure mcs;
+        mcs = new Substructure(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings(), isMatchAtomType(), true);
+        clearMaps();
+        if (mcs.isSubgraph()) {
+            getMCSList().addAll(mcs.getAllAtomMapping());
+        }
+        return mcs.isSubgraph();
     }
 
     private synchronized void vfLibMCSAlgorithm() {
         VF2MCS mcs;
-        mcs = new VF2MCS(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings());
+        mcs = new VF2MCS(getQueryContainer(), getTargetContainer(), isMatchBonds(), isMatchRings(), isMatchAtomType());
         clearMaps();
         getMCSList().addAll(mcs.getAllAtomMapping());
     }
@@ -251,38 +265,19 @@ public final class Isomorphism extends BaseMapping implements ITimeOut, Serializ
 
     private synchronized void defaultMCSAlgorithm() {
         try {
-            cdkMCSAlgorithm();
-            if (getMappingCount() == 0 || isTimeOut()) {
-//                System.out.println("\nSwitching to VF MCS\n");
-//                double time = System.currentTimeMillis();
-                vfLibMCSAlgorithm();
-//                System.out.println("\nVF Lib used\n" + ((System.currentTimeMillis() - time) / (60 * 1000)));
+            boolean substructureAlgorithm = substructureAlgorithm();
+            if (!substructureAlgorithm) {
+                boolean timeoutMCS1 = cdkMCSAlgorithm();
+                if ((getMappingCount() == 0 && timeoutMCS1)
+                        || (timeoutMCS1 && getMappingCount() > 0
+                        && (getFirstAtomMapping().getCount() != getQueryContainer().getAtomCount()
+                        || getFirstAtomMapping().getCount() != getTargetContainer().getAtomCount()))) {
+                    vfLibMCSAlgorithm();
+                }
             }
-        } catch (Exception e) {
+        } catch (CDKException e) {
             logger.error(Level.SEVERE, null, e);
         }
-    }
-
-    private synchronized void setTime(boolean bondTypeFlag) {
-        if (bondTypeFlag) {
-            TimeOut tmo = TimeOut.getInstance();
-            tmo.setCDKMCSTimeOut(getBondSensitiveCDKMCSTimeOut());
-            tmo.setMCSPlusTimeout(getBondSensitiveMCSPlusTimeOut());
-            tmo.setVFTimeout(getBondSensitiveVFTimeOut());
-        } else {
-            TimeOut tmo = TimeOut.getInstance();
-            tmo.setCDKMCSTimeOut(getBondInSensitiveCDKMCSTimeOut());
-            tmo.setMCSPlusTimeout(getBondInSensitiveMCSPlusTimeOut());
-            tmo.setVFTimeout(getBondInSensitiveVFTimeOut());
-        }
-    }
-
-    public synchronized boolean isTimeOut() {
-        return TimeOut.getInstance().isTimeOutFlag();
-    }
-
-    public synchronized void resetTimeOut() {
-        TimeOut.getInstance().setTimeOutFlag(false);
     }
 
     /**
@@ -313,63 +308,31 @@ public final class Isomorphism extends BaseMapping implements ITimeOut, Serializ
         return false;
     }
 
-    @Override
-    public synchronized double getBondSensitiveCDKMCSTimeOut() {
-        return this.bondSensitiveCDKMCSTimeOut;
+    /**
+     * @return the bondSensitiveMcGregorOut
+     */
+    public double getBondSensitiveMcGregorOut() {
+        return bondSensitiveMcGregorOut;
     }
 
-    @Override
-    public synchronized void setBondSensitiveCDKMCSTimeOut(double bondSensitiveTimeOut) {
-        this.bondSensitiveCDKMCSTimeOut = bondSensitiveTimeOut;
+    /**
+     * @param bondSensitiveMcGregorOut the bondSensitiveMcGregorOut to set
+     */
+    public void setBondSenSitiveMcGregorOut(double bondSensitiveMcGregorOut) {
+        this.bondSensitiveMcGregorOut = bondSensitiveMcGregorOut;
     }
 
-    @Override
-    public synchronized double getBondInSensitiveCDKMCSTimeOut() {
-        return bondInSensitiveCDKMCSTimeOut;
+    /**
+     * @return the bondInSensitiveMcGregor
+     */
+    public double getBondInSensitiveMcGregor() {
+        return bondInSensitiveMcGregor;
     }
 
-    @Override
-    public synchronized void setBondInSensitiveCDKMCSTimeOut(double bondInSensitiveTimeOut) {
-        this.bondInSensitiveCDKMCSTimeOut = bondInSensitiveTimeOut;
-    }
-
-    @Override
-    public synchronized double getBondSensitiveMCSPlusTimeOut() {
-        return this.bondSensitiveMCSPlusTimeOut;
-    }
-
-    @Override
-    public synchronized void setBondSensitiveMCSPlusTimeOut(double bondSensitiveTimeOut) {
-        this.bondSensitiveMCSPlusTimeOut = bondSensitiveTimeOut;
-    }
-
-    @Override
-    public synchronized double getBondInSensitiveMCSPlusTimeOut() {
-        return this.bondInSensitiveMCSPlusTimeOut;
-    }
-
-    @Override
-    public synchronized void setBondInSensitiveMCSPlusTimeOut(double bondInSensitiveTimeOut) {
-        this.bondInSensitiveMCSPlusTimeOut = bondInSensitiveTimeOut;
-    }
-
-    @Override
-    public synchronized double getBondSensitiveVFTimeOut() {
-        return this.bondSensitiveVFTimeOut;
-    }
-
-    @Override
-    public synchronized void setBondSensitiveVFTimeOut(double bondSensitiveTimeOut) {
-        this.bondSensitiveVFTimeOut = bondSensitiveTimeOut;
-    }
-
-    @Override
-    public synchronized double getBondInSensitiveVFTimeOut() {
-        return this.bondInSensitiveVFTimeOut;
-    }
-
-    @Override
-    public synchronized void setBondInSensitiveVFTimeOut(double bondInSensitiveTimeOut) {
-        this.bondInSensitiveVFTimeOut = bondInSensitiveTimeOut;
+    /**
+     * @param bondInSensitiveMcGregor the bondInSensitiveMcGregor to set
+     */
+    public void setBondInSenSitiveMcGregor(double bondInSensitiveMcGregor) {
+        this.bondInSensitiveMcGregor = bondInSensitiveMcGregor;
     }
 }

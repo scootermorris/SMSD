@@ -30,32 +30,32 @@ import java.util.TreeMap;
 
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.annotations.TestMethod;
-import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.smsd.AtomAtomMapping;
 import org.openscience.smsd.filters.PostFilter;
-import org.openscience.smsd.helper.FinalMappings;
-import org.openscience.smsd.helper.MoleculeInitializer;
 import org.openscience.smsd.interfaces.IResults;
 
 /**
- * This class acts as a handler class for MCSPlus algorithm.
- * {@link org.openscience.cdk.smsd.algorithm.mcsplus.MCSPlus} @cdk.module smsd @cdk.githash
+ * This class acts as a handler class for MCSPlus algorithm. {@link org.openscience.cdk.smsd.algorithm.mcsplus.MCSPlus}
+ *
+ * @cdk.module smsd @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.SMSDBondSensitiveTest")
-public final class MCSPlusHandler extends MoleculeInitializer implements IResults {
+public final class MCSPlusHandler implements IResults {
 
-    private List<AtomAtomMapping> allAtomMCS = null;
-    private List<Map<Integer, Integer>> allMCS = null;
+    private final List<AtomAtomMapping> allAtomMCS;
+    private final List<Map<Integer, Integer>> allMCS;
     private final IAtomContainer source;
     private final IAtomContainer target;
     private boolean flagExchange = false;
     private final boolean shouldMatchRings;
     private final boolean shouldMatchBonds;
+    private final boolean matchAtomType;
+    private final boolean timeout;
 
     /**
      * Constructor for the MCS Plus algorithm class
@@ -64,23 +64,18 @@ public final class MCSPlusHandler extends MoleculeInitializer implements IResult
      * @param target
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      */
-    public MCSPlusHandler(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings) {
+    public MCSPlusHandler(IAtomContainer source, IAtomContainer target,
+            boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.source = source;
         this.target = target;
         this.shouldMatchRings = shouldMatchRings;
         this.shouldMatchBonds = shouldMatchBonds;
+        this.matchAtomType = matchAtomType;
         allAtomMCS = Collections.synchronizedList(new ArrayList<AtomAtomMapping>());
         allMCS = Collections.synchronizedList(new ArrayList<Map<Integer, Integer>>());
-
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
-        searchMCS();
+        this.timeout = searchMCS();
     }
 
     /**
@@ -94,47 +89,41 @@ public final class MCSPlusHandler extends MoleculeInitializer implements IResult
         this.target = target;
         this.shouldMatchRings = true;
         this.shouldMatchBonds = true;
+        this.matchAtomType = true;
         allAtomMCS = Collections.synchronizedList(new ArrayList<AtomAtomMapping>());
         allMCS = Collections.synchronizedList(new ArrayList<Map<Integer, Integer>>());
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
-        searchMCS();
+        this.timeout = searchMCS();
     }
 
     /**
      * {@inheritDoc} Function is called by the main program and serves as a starting point for the comparison procedure.
      *
      */
-    private synchronized void searchMCS() {
-        List<List<Integer>> mappings = null;
-        try {
-            if (source.getAtomCount() < target.getAtomCount()) {
-                mappings = Collections.synchronizedList(new MCSPlus().getOverlaps(source, target, shouldMatchBonds, shouldMatchRings));
-            } else {
-                flagExchange = true;
-                mappings = Collections.synchronizedList(new MCSPlus().getOverlaps(target, source, shouldMatchBonds, shouldMatchRings));
-            }
-            PostFilter.filter(mappings);
-            setAllMapping();
-            setAllAtomMapping();
-        } catch (CDKException e) {
-            mappings = null;
+    private synchronized boolean searchMCS() {
+        List<List<Integer>> mappings;
+        MCSPlus mcsplus;
+        if (source.getAtomCount() < target.getAtomCount()) {
+            mcsplus = new MCSPlus(source, target, shouldMatchBonds, shouldMatchRings, matchAtomType);
+            List<List<Integer>> overlaps = mcsplus.getOverlaps();
+            mappings = Collections.synchronizedList(overlaps);
+
+        } else {
+            flagExchange = true;
+            mcsplus = new MCSPlus(target, source, shouldMatchBonds, shouldMatchRings, matchAtomType);
+            List<List<Integer>> overlaps = mcsplus.getOverlaps();
+            mappings = Collections.synchronizedList(overlaps);
         }
+        List<Map<Integer, Integer>> solutions = PostFilter.filter(mappings);
+        setAllMapping(solutions);
+        setAllAtomMapping();
+        return mcsplus.isTimeout();
     }
 
-    private synchronized void setAllMapping() {
+    private synchronized void setAllMapping(List<Map<Integer, Integer>> solutions) {
         try {
-
-            List<Map<Integer, Integer>> final_solution =
-                    Collections.synchronizedList(FinalMappings.getInstance().getFinalMapping());
             int counter = 0;
             int bestSolSize = 0;
-            for (Map<Integer, Integer> solution : final_solution) {
+            for (Map<Integer, Integer> solution : solutions) {
 //                System.out.println("Number of MCS solution: " + solution);
                 Map<Integer, Integer> validSolution = Collections.synchronizedSortedMap(new TreeMap<Integer, Integer>());
                 if (!flagExchange) {
@@ -172,8 +161,8 @@ public final class MCSPlusHandler extends MoleculeInitializer implements IResult
                     int IIndex = map.getKey();
                     int JIndex = map.getValue();
 
-                    IAtom sourceAtom = null;
-                    IAtom targetAtom = null;
+                    IAtom sourceAtom;
+                    IAtom targetAtom;
 
                     sourceAtom = source.getAtom(IIndex);
                     targetAtom = target.getAtom(JIndex);
@@ -210,5 +199,12 @@ public final class MCSPlusHandler extends MoleculeInitializer implements IResult
             return allAtomMCS.iterator().next();
         }
         return new AtomAtomMapping(source, target);
+    }
+
+    /**
+     * @return the timeout
+     */
+    public synchronized boolean isTimeout() {
+        return timeout;
     }
 }

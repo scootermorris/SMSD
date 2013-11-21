@@ -24,6 +24,7 @@ package org.openscience.smsd.algorithm.mcsplus;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Stack;
@@ -34,48 +35,66 @@ import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.smsd.algorithm.mcgregor.McGregor;
-import org.openscience.smsd.global.TimeOut;
-import org.openscience.smsd.tools.TimeManager;
+import org.openscience.smsd.tools.IterationManager;
 
 /**
  * This class handles MCS plus algorithm which is a combination of c-clique algorithm and McGregor algorithm.
- * @cdk.module smsd @cdk.githash
+ *
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.SMSDBondSensitiveTest")
-public class MCSPlus {
+public final class MCSPlus {
 
-    private boolean shouldMatchRings;
-    private boolean shouldMatchBonds;
+    private final boolean shouldMatchRings;
+    private final boolean shouldMatchBonds;
+    private final IAtomContainer ac1;
+    private final IAtomContainer ac2;
+    private final List<List<Integer>> overlaps;
 
-    /**
-     * Default constructor added
-     */
-    public MCSPlus() {
-    }
-    private TimeManager timeManager = null;
+    private boolean timeout = false;
+
+    private IterationManager iterationManager = null;
+    private final boolean matchAtomType;
 
     /**
      * @return the timeout
      */
-    protected synchronized double getTimeout() {
-        return TimeOut.getInstance().getMCSPlusTimeout();
+    public synchronized boolean isTimeout() {
+        return timeout;
     }
 
     /**
-     * @return the timeManager
+     * @return the iterationManager
      */
-    protected synchronized TimeManager getTimeManager() {
-        return timeManager;
+    private IterationManager getIterationManager() {
+        return iterationManager;
     }
 
     /**
-     * @param aTimeManager the timeManager to set
+     * @param iterationManager the iterationManager to set
      */
-    public synchronized void setTimeManager(TimeManager aTimeManager) {
-        TimeOut.getInstance().setTimeOutFlag(false);
-        timeManager = aTimeManager;
+    private void setIterationManager(IterationManager iterationManager) {
+        this.iterationManager = iterationManager;
+    }
+
+    /**
+     *
+     * @param shouldMatchRings
+     * @param shouldMatchBonds
+     * @param ac1
+     * @param ac2
+     * @param matchAtomType
+     */
+    public MCSPlus(IAtomContainer ac1, IAtomContainer ac2, boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
+        this.shouldMatchRings = shouldMatchRings;
+        this.shouldMatchBonds = shouldMatchBonds;
+        this.matchAtomType = matchAtomType;
+        this.ac1 = ac1;
+        this.ac2 = ac2;
+        this.overlaps = calculateMCS();
     }
 
     /**
@@ -87,58 +106,51 @@ public class MCSPlus {
      * @return
      * @throws CDKException
      */
-    protected List<List<Integer>> getOverlaps(
-            IAtomContainer ac1,
-            IAtomContainer ac2,
-            boolean shouldMatchBonds,
-            boolean shouldMatchRings)
-            throws CDKException {
-
-        this.shouldMatchBonds = shouldMatchBonds;
-        this.shouldMatchRings = shouldMatchRings;
+    private List<List<Integer>> calculateMCS() {
 
         List<List<Integer>> extendMappings = null;
 
-//        System.err.println("ac1 : " + ac1.getAtomCount());
-//        System.err.println("ac2 : " + ac2.getAtomCount());
-        setTimeManager(new TimeManager());
+//        System.out.println("ac1 : " + ac1.getAtomCount());
+//        System.out.println("ac2 : " + ac2.getAtomCount());
+        setIterationManager(new IterationManager((ac1.getAtomCount() + ac2.getAtomCount())));
         try {
-            GenerateCompatibilityGraph gcg = new GenerateCompatibilityGraph(ac1, ac2, isMatchBonds(), isMatchRings());
+            GenerateCompatibilityGraph gcg = new GenerateCompatibilityGraph(ac1, ac2, isMatchBonds(), isMatchRings(), matchAtomType);
             List<Integer> comp_graph_nodes = gcg.getCompGraphNodes();
 
             List<Integer> cEdges = gcg.getCEgdes();
             List<Integer> dEdges = gcg.getDEgdes();
 //
-//            System.err.println("**************************************************");
-//            System.err.println("C_edges: " + cEdges.size());
-//            System.err.println("D_edges: " + dEdges.size());
-
+//            System.out.println("**************************************************");
+//            System.out.println("C_edges: " + cEdges.size());
+//            System.out.println("D_edges: " + dEdges.size());
+//            System.out.println("comp_graph_nodes: " + comp_graph_nodes);
             BKKCKCF init = new BKKCKCF(comp_graph_nodes, cEdges, dEdges);
-//            Koch init = new Koch(comp_graph_nodes, cEdges, dEdges);
-            Stack<List<Integer>> maxCliqueSet = null;
-            maxCliqueSet = init.getMaxCliqueSet();
+            Stack<List<Integer>> maxCliqueSet = new Stack<List<Integer>>();
+            maxCliqueSet.addAll(init.getMaxCliqueSet());
 
-//            System.err.println("Max_Cliques_Set: " + maxCliqueSet);
-//            System.err.println("Best Clique Size: " + init.getBestCliqueSize());
-//            System.err.println("**************************************************");
-
-
-            //clear all the compatibility graph content
-            gcg.clear();
+//            System.out.println("Max_Cliques_Set: " + maxCliqueSet);
+//            System.out.println("Best Clique Size: " + init.getBestCliqueSize());
+//            System.out.println("**************************************************");
             List<Map<Integer, Integer>> mappings = new ArrayList<Map<Integer, Integer>>();
 
             while (!maxCliqueSet.empty()) {
-                Map<Integer, Integer> indexindexMapping = new TreeMap<Integer, Integer>();
+                Map<Integer, Integer> indexindexMapping;
                 indexindexMapping = ExactMapping.extractMapping(comp_graph_nodes, maxCliqueSet.peek());
-                mappings.add(indexindexMapping);
+                if (indexindexMapping != null) {
+                    mappings.add(indexindexMapping);
+                }
                 maxCliqueSet.pop();
             }
+
+            //clear all the compatibility graph content
+            gcg.clear();
+//            System.out.println("mappings: " + mappings.size());
             extendMappings = searchMcGregorMapping(ac1, ac2, mappings);
+//            int size = !extendMappings.isEmpty() ? (extendMappings.size() / 2) : 0;
+//            System.out.println("extendMappings: " + size);
         } catch (IOException ex) {
             Logger.getLogger(MCSPlus.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        System.err.println("extendMappings: " + extendMappings.iterator().next().size() / 2);
-
         return extendMappings;
     }
 
@@ -147,40 +159,33 @@ public class MCSPlus {
             IAtomContainer ac2,
             List<Map<Integer, Integer>> allMCSCopy) throws IOException {
 
-        List<List<Integer>> extendMappings = new ArrayList<List<Integer>>();
+        List<List<Integer>> cliques = new ArrayList<List<Integer>>();
 
         boolean ROPFlag = true;
         for (Map<Integer, Integer> firstPassMappings : allMCSCopy) {
             Map<Integer, Integer> extendMapping = new TreeMap<Integer, Integer>(firstPassMappings);
-            McGregor mgit = null;
-
+            McGregor mgit;
             if (ac1.getAtomCount() > ac2.getAtomCount()) {
-                mgit = new McGregor(ac1, ac2, extendMappings, isMatchBonds(), isMatchRings());
+                mgit = new McGregor(ac1, ac2, cliques, isMatchBonds(), isMatchRings(), isMatchAtomType());
             } else {
                 extendMapping.clear();
-                mgit = new McGregor(ac2, ac1, extendMappings, isMatchBonds(), isMatchRings());
                 ROPFlag = false;
                 for (Map.Entry<Integer, Integer> map : firstPassMappings.entrySet()) {
                     extendMapping.put(map.getValue(), map.getKey());
                 }
+                mgit = new McGregor(ac2, ac1, cliques, isMatchBonds(), isMatchRings(), isMatchAtomType());
             }
 //            System.out.println("\nStart McGregor search");
             //Start McGregor search
             mgit.startMcGregorIteration(mgit.getMCSSize(), extendMapping);
-            extendMappings = mgit.getMappings();
-            mgit = null;
-
-            if (isTimeOut()) {
-                Logger.getLogger("\nMCSPlus hit by timeout in McGregor\n");
+            cliques = mgit.getMappings();
+//            System.out.println("\nSol count after MG " + cliques.size());
+            if (checkTimeout()) {
                 break;
             }
-
-//            System.out.println("\nSol count after MG" + extendMappings.size());
         }
-        List<List<Integer>> finalMappings = setMcGregorMappings(ROPFlag, extendMappings);
-//        System.out.println("After set Sol count MG" + finalMappings.size());
-//        System.out.println("MCSSize " + finalMappings.iterator().next().size() + "\n");
-
+        List<List<Integer>> finalMappings = setMcGregorMappings(ROPFlag, cliques);
+//        System.out.println("After set Sol count MG " + finalMappings.size());
         return finalMappings;
     }
 
@@ -193,8 +198,8 @@ public class MCSPlus {
         for (List<Integer> mapping : mappings) {
             List<Integer> indexindexMapping = new ArrayList<Integer>();
             for (int index = 0; index < mapping.size(); index += 2) {
-                Integer qIndex = 0;
-                Integer tIndex = 0;
+                Integer qIndex;
+                Integer tIndex;
 
                 if (RONP) {
                     qIndex = mapping.get(index);
@@ -223,11 +228,13 @@ public class MCSPlus {
         return finalMappings;
     }
 
-    public synchronized boolean isTimeOut() {
-        if (getTimeout() > -1 && getTimeManager().getElapsedTimeInMinutes() > getTimeout()) {
-            TimeOut.getInstance().setTimeOutFlag(true);
+    private boolean checkTimeout() {
+        if (getIterationManager().isMaxIteration()) {
+            this.timeout = true;
+//            System.out.println("MCS+ iterations " + getIterationManager().getCounter());
             return true;
         }
+        getIterationManager().increment();
         return false;
     }
 
@@ -243,5 +250,19 @@ public class MCSPlus {
      */
     public boolean isMatchBonds() {
         return shouldMatchBonds;
+    }
+
+    /**
+     * @return the overlaps
+     */
+    public List<List<Integer>> getOverlaps() {
+        return Collections.unmodifiableList(overlaps);
+    }
+
+    /**
+     * @return the matchAtomType
+     */
+    public boolean isMatchAtomType() {
+        return matchAtomType;
     }
 }

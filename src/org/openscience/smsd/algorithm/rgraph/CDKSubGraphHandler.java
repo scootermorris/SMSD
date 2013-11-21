@@ -32,20 +32,17 @@ import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IAtomContainerSet;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.smsd.AtomAtomMapping;
-import org.openscience.smsd.helper.FinalMappings;
-import org.openscience.smsd.helper.MoleculeInitializer;
 import org.openscience.smsd.interfaces.IResults;
 
 /**
- * This class acts as a handler class for CDKMCS algorithm
- * {@link org.openscience.cdk.smsd.algorithm.cdk.CDKMCS}.
+ * This class acts as a handler class for CDKMCS algorithm {@link org.openscience.cdk.smsd.algorithm.cdk.CDKMCS}.
  *
  * @cdk.module smsd @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.algorithm.cdk.CDKMCSHandlerTest")
-public class CDKSubGraphHandler extends MoleculeInitializer implements IResults {
+public class CDKSubGraphHandler implements IResults {
 
 //    //~--- fields -------------------------------------------------------------
     private final IAtomContainer source;
@@ -55,6 +52,7 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
     private List<Map<Integer, Integer>> allMCS = null;
     private final boolean shouldMatchRings;
     private final boolean shouldMatchBonds;
+    private final boolean matchAtomType;
 
     //~--- constructors -------------------------------------------------------
     /*
@@ -67,20 +65,15 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
      * @param shouldMatchBonds
      * @param shouldMatchRings
      */
-    public CDKSubGraphHandler(IAtomContainer source, IAtomContainer target, boolean shouldMatchBonds, boolean shouldMatchRings) {
+    public CDKSubGraphHandler(IAtomContainer source, IAtomContainer target,
+            boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.source = source;
         this.target = target;
         this.shouldMatchRings = shouldMatchRings;
         this.shouldMatchBonds = shouldMatchBonds;
+        this.matchAtomType = matchAtomType;
         this.allAtomMCS = new ArrayList<AtomAtomMapping>();
         this.allMCS = new ArrayList<Map<Integer, Integer>>();
-        if (this.shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
         isSubgraph();
     }
 
@@ -94,15 +87,9 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
         this.target = target;
         this.shouldMatchRings = true;
         this.shouldMatchBonds = true;
+        this.matchAtomType = true;
         this.allAtomMCS = new ArrayList<AtomAtomMapping>();
         this.allMCS = new ArrayList<Map<Integer, Integer>>();
-        if (shouldMatchRings) {
-            try {
-                initializeMolecule(source);
-                initializeMolecule(target);
-            } catch (CDKException ex) {
-            }
-        }
         isSubgraph();
     }
 
@@ -113,23 +100,23 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
     private boolean isSubgraph() {
 
         CDKRMapHandler rmap = new CDKRMapHandler();
-
+        List<Map<Integer, Integer>> solutions;
         try {
 
             if ((source.getAtomCount() == target.getAtomCount()) && source.getBondCount() == target.getBondCount()) {
                 rOnPFlag = true;
-                rmap.calculateIsomorphs(source, target, shouldMatchBonds, shouldMatchRings);
+                solutions = rmap.calculateIsomorphs(source, target, shouldMatchBonds, shouldMatchRings, matchAtomType);
 
             } else if (source.getAtomCount() > target.getAtomCount() && source.getBondCount() != target.getBondCount()) {
                 rOnPFlag = true;
-                rmap.calculateSubGraphs(source, target, shouldMatchBonds, shouldMatchRings);
+                solutions = rmap.calculateSubGraphs(source, target, shouldMatchBonds, shouldMatchRings, matchAtomType);
 
             } else {
                 rOnPFlag = false;
-                rmap.calculateSubGraphs(target, source, shouldMatchBonds, shouldMatchRings);
+                solutions = rmap.calculateSubGraphs(target, source, shouldMatchBonds, shouldMatchRings, matchAtomType);
             }
 
-            setAllMapping();
+            setAllMapping(solutions);
             setAllAtomMapping();
 
         } catch (CDKException e) {
@@ -144,15 +131,13 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
      *
      * @param mol
      * @param mcss
-     * @param shouldMatchBonds
-     * @param shouldMatchRings
      * @return IAtomContainer Set
      * @throws CDKException
      */
-    protected IAtomContainerSet getUncommon(IAtomContainer mol, IAtomContainer mcss, boolean shouldMatchBonds, boolean shouldMatchRings) throws CDKException {
+    protected IAtomContainerSet getUncommon(IAtomContainer mol, IAtomContainer mcss) throws CDKException {
         ArrayList<Integer> atomSerialsToDelete = new ArrayList<Integer>();
 
-        List<List<CDKRMap>> matches = CDKMCS.getSubgraphAtomsMaps(mol, mcss, shouldMatchBonds, shouldMatchRings);
+        List<List<CDKRMap>> matches = CDKMCS.getSubgraphAtomsMaps(mol, mcss, shouldMatchBonds, shouldMatchRings, matchAtomType);
         List<CDKRMap> mapList = matches.get(0);
         for (Object o : mapList) {
             CDKRMap rmap = (CDKRMap) o;
@@ -178,14 +163,13 @@ public class CDKSubGraphHandler extends MoleculeInitializer implements IResults 
     }
 
     //~--- get methods --------------------------------------------------------
-    private synchronized void setAllMapping() {
+    private synchronized void setAllMapping(List<Map<Integer, Integer>> solutions) {
 
         //int count_final_sol = 1;
         //System.out.println("Output of the final FinalMappings: ");
         try {
-            List<Map<Integer, Integer>> sol = FinalMappings.getInstance().getFinalMapping();
             int counter = 0;
-            for (Map<Integer, Integer> final_solution : sol) {
+            for (Map<Integer, Integer> final_solution : solutions) {
                 TreeMap<Integer, Integer> atomMappings = new TreeMap<Integer, Integer>();
                 for (Map.Entry<Integer, Integer> Solutions : final_solution.entrySet()) {
 

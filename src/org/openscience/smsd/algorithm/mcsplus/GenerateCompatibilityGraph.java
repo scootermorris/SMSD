@@ -25,9 +25,14 @@
 package org.openscience.smsd.algorithm.mcsplus;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
@@ -39,23 +44,28 @@ import org.openscience.smsd.helper.LabelContainer;
 
 /**
  * This class generates compatibility graph between query and target molecule. It also marks edges in the compatibility
- * graph as c-edges or d-edges. @cdk.module smsd @cdk.githash
+ * graph as c-edges or d-edges.
+ *
+ * @cdk.module smsd
+ * @cdk.githash
  *
  * @author Syed Asad Rahman <asad@ebi.ac.uk>
  */
 @TestClass("org.openscience.cdk.smsd.SMSDBondSensitiveTest")
-public final class GenerateCompatibilityGraph {
+public final class GenerateCompatibilityGraph implements Serializable {
 
+    private static final long serialVersionUID = 96986606860861L;
     private List<Integer> compGraphNodes = null;
     private List<Integer> compGraphNodesCZero = null;
-    private List<Integer> cEdges = null;
-    private List<Integer> dEdges = null;
+    private final List<Integer> cEdges;
+    private final List<Integer> dEdges;
     private int cEdgesSize = 0;
     private int dEdgesSize = 0;
     private final IAtomContainer source;
     private final IAtomContainer target;
     private final boolean shouldMatchBonds;
     private final boolean shouldMatchRings;
+    private final boolean matchAtomType;
 
     /**
      * Generates a compatibility graph between two molecules
@@ -64,24 +74,31 @@ public final class GenerateCompatibilityGraph {
      * @param target
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      * @throws java.io.IOException
      */
     public GenerateCompatibilityGraph(
             IAtomContainer source,
             IAtomContainer target,
             boolean shouldMatchBonds,
-            boolean shouldMatchRings) throws IOException {
+            boolean shouldMatchRings,
+            boolean matchAtomType) throws IOException {
         this.shouldMatchRings = shouldMatchRings;
         this.shouldMatchBonds = shouldMatchBonds;
+        this.matchAtomType = matchAtomType;
         this.source = source;
         this.target = target;
         compGraphNodes = new ArrayList<Integer>();
         compGraphNodesCZero = new ArrayList<Integer>();
         cEdges = Collections.synchronizedList(new ArrayList<Integer>());
         dEdges = Collections.synchronizedList(new ArrayList<Integer>());
-        compatibilityGraphNodes();
-        compatibilityGraph();
 
+//        System.out.println("compatibilityGraphNodes ");
+        compatibilityGraphNodes();
+//        System.out.println("compatibilityGraph ");
+        compatibilityGraph();
+//        System.out.println("c-edges " + getCEgdes().size());
+//        System.out.println("d-edges " + getDEgdes().size());
 
         if (getCEdgesSize() == 0) {
             clearCompGraphNodes();
@@ -98,84 +115,76 @@ public final class GenerateCompatibilityGraph {
         }
     }
 
-    private List<List<Integer>> labelAtoms(IAtomContainer atomCont) {
-        List<List<Integer>> label_list = new ArrayList<List<Integer>>();
-        LabelContainer labelContainer = LabelContainer.getInstance();
+    private Map<IAtom, List<String>> labelAtomsBySymbol(IAtomContainer atomCont) {
+        Map<IAtom, List<String>> label_list = new HashMap<IAtom, List<String>>();
 
         for (int i = 0; i < atomCont.getAtomCount(); i++) {
-            List<Integer> label = new ArrayList<Integer>(7);
+            List<String> label = new ArrayList<String>(7);
             for (int a = 0; a < 7; a++) {
-                label.add(a, 0);
+                label.add(a, "Z9");
             }
             IAtom refAtom = atomCont.getAtom(i);
-            String referenceAtom = refAtom.getSymbol();
-
-            label.set(0, labelContainer.getLabelID(referenceAtom));
+            /*
+             * Important Step: Discriminate between source atom types
+             */
+            String referenceAtom;
+            if (this.matchAtomType) {
+                referenceAtom = refAtom.getAtomTypeName() == null ? refAtom.getSymbol() : refAtom.getAtomTypeName();
+            } else {
+                referenceAtom = refAtom.getSymbol();
+            }
+            label.set(0, referenceAtom);
             List<IAtom> connAtoms = atomCont.getConnectedAtomsList(refAtom);
 
             int counter = 1;
 
             for (IAtom negAtom : connAtoms) {
-                String neighbouringAtom = negAtom.getSymbol();
-                label.set(counter, labelContainer.getLabelID(neighbouringAtom));
+                String neighbouringAtom;
+                if (this.matchAtomType) {
+                    neighbouringAtom = negAtom.getAtomTypeName() == null ? negAtom.getSymbol() : negAtom.getAtomTypeName();
+                } else {
+                    neighbouringAtom = negAtom.getSymbol();
+                }
+                label.set(counter, neighbouringAtom);
                 counter += 1;
             }
+//            System.out.println("label " + label);
             bubbleSort(label);
-            label_list.add(label);
+            label_list.put(refAtom, label);
         }
         return label_list;
     }
 
-    private void bubbleSort(List<Integer> label) {
+    private void bubbleSort(List<String> num) {
+        int j;
+        boolean flag = true;   // set flag to true to begin first pass
+        String temp;   //holding variable
 
-        boolean flag = true; // set flag to 1 to begin initial pass
-        int temp; // holding variable
-        for (int i = 0; i < 7 && flag; i++) {
-            flag = false;
-            for (int j = 0; j < 6; j++) {
-                if (label.get(i) > label.get(j + 1)) {
-                    // descending order simply changes to >
-                    temp = label.get(i); // swap elements
-
-                    label.set(i, label.get(j + 1));
-                    label.set(j + 1, temp);
-                    flag = true; // indicates that iIndex swap occurred.
+        while (flag) {
+            flag = false;    //set flag to false awaiting a possible swap
+            for (j = 0; j < (num.size() - 1); j++) {
+                if (num.get(j).compareTo(num.get(j + 1)) > 0) // change to < for descending sort
+                {
+                    temp = num.get(j);                //swap elements
+                    num.set(j, num.get(j + 1));
+                    num.set(j + 1, temp);
+                    flag = true;              //shows a swap occurred  
                 }
             }
         }
     }
 
-    private List<IAtom> reduceAtomSet(IAtomContainer atomCont) {
-        List<IAtom> atoms = new ArrayList<IAtom>();
-        for (IAtom atom : atomCont.atoms()) {
-            atoms.add(atom);
-        }
-        return atoms;
+    private boolean isSubset(List<String> labelA, List<String> labelB) {
+        List<String> common = new ArrayList<String>(labelA);
+        common.retainAll(labelB);
+        return common.size() == labelB.size();
     }
 
-    /*
-     * labelA [0, 2, 2, 2, 0, 0, 0] labelB [0, 2, 2, 2, 0, 0, 0]
-     *
-     * return true
-     *
-     * labelA [0, 2, 2, 0, 0, 0, 0] labelB [0, 2, 2, 2, 0, 0, 0]
-     *
-     * return true
-     *
-     * labelA [0, 2, 2, 3, 0, 0, 0] labelB [0, 2, 2, 2, 0, 0, 0]
-     *
-     * return false
-     *
-     * labelA [0, 2, 2, 2, 0, 0, 0] labelB [0, 2, 2, 0, 0, 0, 0]
-     *
-     * return false
-     *
-     */
-    private boolean isSubset(List<Integer> labelA, List<Integer> labelB) {
+    private boolean isEqual(List<String> labelA, List<String> labelB) {
         boolean flag = true;
         for (int i = 0; i < labelA.size(); i++) {
-            if (labelA.get(i) != labelB.get(i)) {
-                if (labelA.get(i) > 0) {
+            if (!labelA.get(i).equals(labelB.get(i))) {
+                if (labelA.get(i).compareTo(labelB.get(i)) != 0) {
                     flag = false;
                 }
             }
@@ -189,35 +198,36 @@ public final class GenerateCompatibilityGraph {
      * @return
      * @throws IOException
      */
-    protected int compatibilityGraphNodes() throws IOException {
+    private int compatibilityGraphNodes() throws IOException {
 
         compGraphNodes.clear();
-        List<IAtom> sourceAtoms = null;
-        List<IAtom> targetAtoms = null;
 
-        sourceAtoms = reduceAtomSet(source);
-        targetAtoms = reduceAtomSet(target);
+        Set<Edge> edges = new HashSet<Edge>();
 
-        List<List<Integer>> label_list_molA = labelAtoms(source);
-        List<List<Integer>> label_list_molB = labelAtoms(target);
-
-        int sourceNodes = 0;
         int nodeCount = 1;
+        Map<IAtom, List<String>> labelAtomsBySymbolA = labelAtomsBySymbol(source);
+        Map<IAtom, List<String>> labelAtomsBySymbolB = labelAtomsBySymbol(target);
 
-        for (List<Integer> labelA : label_list_molA) {
-            int targetNodes = 0;
-            for (List<Integer> labelB : label_list_molB) {
-//                if (labelA.equals(labelB)) {
-                if (isSubset(labelA, labelB)) {
-
-                    compGraphNodes.add(source.getAtomNumber(sourceAtoms.get(sourceNodes)));
-                    compGraphNodes.add(target.getAtomNumber(targetAtoms.get(targetNodes)));
-                    compGraphNodes.add(nodeCount);
-                    nodeCount += 1;
+        for (Map.Entry<IAtom, List<String>> labelA : labelAtomsBySymbolA.entrySet()) {
+//            System.err.println("labelA.getValue() " + labelA.getValue());
+            for (Map.Entry<IAtom, List<String>> labelB : labelAtomsBySymbolB.entrySet()) {
+                if (labelA.getKey().getSymbol().equals(labelB.getKey().getSymbol())) {
+                    if ((isMatchBond() && isEqual(labelA.getValue(), labelB.getValue()))
+                            || (!isMatchBond() && isSubset(labelA.getValue(), labelB.getValue()))) {
+//                        System.err.println("labelB.getValue() " + labelB.getValue());
+                        int atomNumberI = source.getAtomNumber(labelA.getKey());
+                        int atomNumberJ = target.getAtomNumber(labelB.getKey());
+                        Edge e = new Edge(atomNumberI, atomNumberJ);
+                        if (!edges.contains(e)) {
+                            edges.add(e);
+                            compGraphNodes.add(atomNumberI);
+                            compGraphNodes.add(atomNumberJ);
+                            compGraphNodes.add(nodeCount);
+                            nodeCount += 1;
+                        }
+                    }
                 }
-                targetNodes++;
             }
-            sourceNodes++;
         }
         return 0;
     }
@@ -228,64 +238,32 @@ public final class GenerateCompatibilityGraph {
      * @return
      * @throws IOException
      */
-    protected int compatibilityGraph() throws IOException {
-
+    private int compatibilityGraph() throws IOException {
         int comp_graph_nodes_List_size = compGraphNodes.size();
-
-//        System.out.println("Vector_Size: " + compGraphNodes);
-
-//        System.out.println("compGraphNodes size " + comp_graph_nodes_List_size);
-
-        cEdges = new ArrayList<Integer>(); //Initialize the cEdges List
-        dEdges = new ArrayList<Integer>(); //Initialize the dEdges List
-
+//        System.out.println("Source atom count " + source.getAtomCount());
+//        System.out.println("target atom count " + target.getAtomCount());
+//        System.out.println("Expected " + (source.getAtomCount() * target.getAtomCount())
+//                + " Found Compatibilty: " + ((compGraphNodes.size() / 3) * 2));
+//        System.out.println("compGraphNodes " + compGraphNodes);
         for (int a = 0; a < comp_graph_nodes_List_size; a += 3) {
-            for (int b = a + 3; b < comp_graph_nodes_List_size; b += 3) {
+            for (int b = a; b < comp_graph_nodes_List_size; b += 3) {
                 if ((a != b)
                         && (compGraphNodes.get(a) != compGraphNodes.get(b))
                         && (compGraphNodes.get(a + 1) != compGraphNodes.get(b + 1))) {
 
-                    boolean molecule1_pair_connected = false;
-                    boolean molecule2_pair_connected = false;
+                    IBond reactantBond;
+                    IBond productBond;
 
-                    IBond reactantBond = null;
-                    IBond productBond = null;
-
+//                    System.out.println("a " + compGraphNodes.get(a) + " b " + compGraphNodes.get(b));
                     //exists a bond in molecule 2, so that molecule 1 pair is connected?
-                    for (int x = 0; x < source.getBondCount(); x++) {
-
-                        reactantBond = source.getBond(x);
-
-                        int q1 = source.getAtomNumber(reactantBond.getAtom(0));
-                        int q2 = source.getAtomNumber(reactantBond.getAtom(1));
-
-                        if (((compGraphNodes.get(a) == q1)
-                                && (compGraphNodes.get(b) == q2))
-                                || ((compGraphNodes.get(a) == q2)
-                                && (compGraphNodes.get(b) == q1))) {
-                            molecule1_pair_connected = true;
-                            break;
-                        }
-                    }
-                    //exists a bond in molecule 2, so that molecule 2 pair is connected?
-                    for (int y = 0; y < target.getBondCount(); y++) {
-
-                        productBond = target.getBond(y);
-
-                        int t1 = target.getAtomNumber(productBond.getAtom(0));
-                        int t2 = target.getAtomNumber(productBond.getAtom(1));
-
-                        if (((compGraphNodes.get(a + 1) == t1)
-                                && (compGraphNodes.get(b + 1) == t2))
-                                || ((compGraphNodes.get(a + 1) == t2)
-                                && (compGraphNodes.get(b + 1) == t1))) {
-                            molecule2_pair_connected = true;
-                            break;
-                        }
-                    }
+                    reactantBond = source.getBond(source.getAtom(compGraphNodes.get(a)), source.getAtom(compGraphNodes.get(b)));
+                    productBond = target.getBond(target.getAtom(compGraphNodes.get(a + 1)), target.getAtom(compGraphNodes.get(b + 1)));
 
                     if (reactantBond != null && productBond != null) {
-                        addEdges(reactantBond, productBond, a, b, molecule1_pair_connected, molecule2_pair_connected);
+                        addEdges(reactantBond, productBond, a, b);
+                    } else if (reactantBond == null && productBond == null) {
+                        dEdges.add((a / 3) + 1);
+                        dEdges.add((b / 3) + 1);
                     }
                 }
             }
@@ -295,18 +273,11 @@ public final class GenerateCompatibilityGraph {
         return 0;
     }
 
-    private void addEdges(IBond reactantBond, IBond productBond, int iIndex, int jIndex,
-            boolean molecule1_pair_connected, boolean molecule2_pair_connected) {
-
-        if (molecule1_pair_connected && molecule2_pair_connected) {
-            if (isMatchFeasible(reactantBond, productBond, isMatchBond(), isMatchRings())) {
-                cEdges.add((iIndex / 3) + 1);
-                cEdges.add((jIndex / 3) + 1);
-            } else {
-                dEdges.add((iIndex / 3) + 1);
-                dEdges.add((jIndex / 3) + 1);
-            }
-        } else if ((!molecule1_pair_connected && !molecule2_pair_connected)) {
+    private void addEdges(IBond reactantBond, IBond productBond, int iIndex, int jIndex) {
+        if (isMatchFeasible(reactantBond, productBond, isMatchBond(), isMatchRings(), matchAtomType)) {
+            cEdges.add((iIndex / 3) + 1);
+            cEdges.add((jIndex / 3) + 1);
+        } else {
             dEdges.add((iIndex / 3) + 1);
             dEdges.add((jIndex / 3) + 1);
         }
@@ -318,7 +289,7 @@ public final class GenerateCompatibilityGraph {
      * @return
      * @throws IOException
      */
-    protected Integer compatibilityGraphNodesIfCEdgeIsZero() throws IOException {
+    private Integer compatibilityGraphNodesIfCEdgeIsZero() throws IOException {
 
         int count_nodes = 1;
         List<String> map = new ArrayList<String>();
@@ -332,7 +303,6 @@ public final class GenerateCompatibilityGraph {
                 IAtom atom2 = target.getAtom(j);
 
                 //You can also check object equal or charge, hydrogen count etc
-
                 if ((atom1 instanceof IQueryAtom)
                         && ((IQueryAtom) atom1).matches(atom2)
                         && !map.contains(i + "_" + j)) {
@@ -369,11 +339,9 @@ public final class GenerateCompatibilityGraph {
      * @return
      * @throws IOException
      */
-    protected int compatibilityGraphCEdgeZero() throws IOException {
+    private int compatibilityGraphCEdgeZero() throws IOException {
 
         int compGraphNodesCZeroListSize = compGraphNodesCZero.size();
-        cEdges = new ArrayList<Integer>(); //Initialize the cEdges List
-        dEdges = new ArrayList<Integer>(); //Initialize the dEdges List
 
         for (int a = 0; a < compGraphNodesCZeroListSize; a += 4) {
             int index_a = compGraphNodesCZero.get(a);
@@ -386,8 +354,8 @@ public final class GenerateCompatibilityGraph {
                 if ((a != b) && (index_a != index_b)
                         && (index_aPlus1 != index_bPlus1)) {
 
-                    IBond reactantBond = null;
-                    IBond productBond = null;
+                    IBond reactantBond;
+                    IBond productBond;
 
                     reactantBond = source.getBond(source.getAtom(index_a), source.getAtom(index_b));
                     productBond = target.getBond(target.getAtom(index_aPlus1), target.getAtom(index_bPlus1));
@@ -395,7 +363,6 @@ public final class GenerateCompatibilityGraph {
                     if (reactantBond != null && productBond != null) {
                         addZeroEdges(reactantBond, productBond, a, b);
                     }
-
                 }
             }
         }
@@ -407,7 +374,7 @@ public final class GenerateCompatibilityGraph {
     }
 
     private void addZeroEdges(IBond reactantBond, IBond productBond, int indexI, int indexJ) {
-        if (isMatchFeasible(reactantBond, productBond, isMatchBond(), isMatchRings())) {
+        if (isMatchFeasible(reactantBond, productBond, isMatchBond(), isMatchRings(), matchAtomType)) {
             cEdges.add((indexI / 4) + 1);
             cEdges.add((indexJ / 4) + 1);
         }
@@ -425,96 +392,95 @@ public final class GenerateCompatibilityGraph {
      * @param shouldMatchRings
      * @return
      */
-    protected static boolean isMatchFeasible(
+    private boolean isMatchFeasible(
             IBond bondA1,
             IBond bondA2,
             boolean shouldMatchBonds,
-            boolean shouldMatchRings) {
+            boolean shouldMatchRings,
+            boolean matchAtomType) {
 
         if (bondA1 instanceof IQueryBond) {
             if (((IQueryBond) bondA1).matches(bondA2)) {
                 IQueryAtom atom1 = (IQueryAtom) (bondA1.getAtom(0));
                 IQueryAtom atom2 = (IQueryAtom) (bondA1.getAtom(1));
-                // ok, bonds match
-                if (atom1.matches(bondA2.getAtom(0)) && atom2.matches(bondA2.getAtom(1))
-                        || atom1.matches(bondA2.getAtom(1)) && atom2.matches(bondA2.getAtom(0))) {
-                    // ok, atoms match in either order
-                    return true;
-                }
-                return false;
+                return atom1.matches(bondA2.getAtom(0)) && atom2.matches(bondA2.getAtom(1))
+                        || atom1.matches(bondA2.getAtom(1)) && atom2.matches(bondA2.getAtom(0));
             }
             return false;
         } else {
-            return DefaultMatcher.matches(bondA1, bondA2, shouldMatchBonds, shouldMatchRings) ? true : false;
+            /*
+             This one also matches atom type, not just symbols
+             */
+            return DefaultMatcher.matches(bondA1, bondA2, shouldMatchBonds, shouldMatchRings, matchAtomType);
         }
     }
 
-    public List<Integer> getCEgdes() {
-        return Collections.unmodifiableList(cEdges);
+    public synchronized List<Integer> getCEgdes() {
+        return Collections.synchronizedList(cEdges);
     }
 
-    public List<Integer> getDEgdes() {
-        return Collections.unmodifiableList(dEdges);
+    public synchronized List<Integer> getDEgdes() {
+        return Collections.synchronizedList(dEdges);
     }
 
-    public List<Integer> getCompGraphNodes() {
-        return Collections.unmodifiableList(compGraphNodes);
+    public synchronized List<Integer> getCompGraphNodes() {
+        return Collections.synchronizedList(compGraphNodes);
     }
 
-    public int getCEdgesSize() {
+    protected synchronized int getCEdgesSize() {
         return cEdgesSize;
     }
 
-    public int getDEdgesSize() {
+    protected synchronized int getDEdgesSize() {
         return dEdgesSize;
     }
 
-    protected List<Integer> getCompGraphNodesCZero() {
+    private List<Integer> getCompGraphNodesCZero() {
         return Collections.unmodifiableList(compGraphNodesCZero);
     }
 
-    protected void clearCEgdes() {
+    private void clearCEgdes() {
         cEdges.clear();
     }
 
-    protected void clearDEgdes() {
+    private void clearDEgdes() {
         dEdges.clear();
     }
 
-    protected void clearCompGraphNodes() {
+    private void clearCompGraphNodes() {
         compGraphNodes.clear();
     }
 
-    protected void clearCompGraphNodesCZero() {
+    private void clearCompGraphNodesCZero() {
         compGraphNodesCZero.clear();
     }
 
-    protected void resetCEdgesSize() {
+    private void resetCEdgesSize() {
         cEdgesSize = 0;
     }
 
-    protected void resetDEdgesSize() {
+    private void resetDEdgesSize() {
         dEdgesSize = 0;
     }
 
     public synchronized void clear() {
-        cEdges = null;
-        dEdges = null;
-        compGraphNodes = null;
-        compGraphNodesCZero = null;
+        cEdges.clear();
+        dEdges.clear();
+        compGraphNodes.clear();
+        compGraphNodesCZero.clear();
     }
 
     /**
      * @return the shouldMatchBonds
      */
-    public boolean isMatchBond() {
+    private boolean isMatchBond() {
         return shouldMatchBonds;
     }
 
     /**
      * @return the shouldMatchRings
      */
-    public boolean isMatchRings() {
+    private boolean isMatchRings() {
         return shouldMatchRings;
     }
 }

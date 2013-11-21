@@ -49,24 +49,27 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
 
     private final boolean matchBonds;
     private final boolean matchRings;
+    private final boolean matchAtomType;
     private boolean subgraph;
     private List<Double> stereoScoreList;
     private List<Integer> fragmentSizeList;
     private List<Double> bondEnergiesList;
-    private final static ILoggingTool Logger =
-            LoggingToolFactory.createLoggingTool(BaseMapping.class);
+    private final static ILoggingTool Logger
+            = LoggingToolFactory.createLoggingTool(BaseMapping.class);
 
     /**
      *
      * @param matchBonds
      * @param matchRings
+     * @param matchAtomType
      * @param mol1
      * @param mol2
      */
-    public BaseMapping(boolean matchBonds, boolean matchRings, IAtomContainer mol1, IAtomContainer mol2) {
+    public BaseMapping(boolean matchBonds, boolean matchRings, boolean matchAtomType, IAtomContainer mol1, IAtomContainer mol2) {
         super(mol1, mol2);
         this.matchBonds = matchBonds;
         this.matchRings = matchRings;
+        this.matchAtomType = matchAtomType;
 
     }
 
@@ -84,6 +87,11 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
                 }
             }
 
+            if (fragmentFilter) {
+                sortResultsByFragments();
+                this.fragmentSizeList = getSortedFragment();
+            }
+
             if (stereoFilter) {
                 try {
                     sortResultsByStereoAndBondMatch();
@@ -91,11 +99,6 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
                 } catch (CDKException ex) {
                     Logger.error(Level.SEVERE, null, ex);
                 }
-            }
-
-            if (fragmentFilter) {
-                sortResultsByFragments();
-                this.fragmentSizeList = getSortedFragment();
             }
         }
     }
@@ -158,12 +161,10 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
         int stereoMisMatchScore = 0;
         if (getMappingCount() > 0) {
             AtomAtomMapping firstAtomMCS = getMCSList().iterator().next();
-            for (Iterator<IAtom> it1 = firstAtomMCS.getMappings().keySet().iterator(); it1.hasNext();) {
-                IAtom indexI = it1.next();
-                IAtom indexJ = firstAtomMCS.getMappings().get(indexI);
-                for (Iterator<IAtom> it2 = firstAtomMCS.getMappings().keySet().iterator(); it2.hasNext();) {
-                    IAtom indexIPlus = it2.next();
-                    IAtom indexJPlus = firstAtomMCS.getMappings().get(indexIPlus);
+            for (IAtom indexI : firstAtomMCS.getMappingsByAtoms().keySet()) {
+                IAtom indexJ = firstAtomMCS.getMappingsByAtoms().get(indexI);
+                for (IAtom indexIPlus : firstAtomMCS.getMappingsByAtoms().keySet()) {
+                    IAtom indexJPlus = firstAtomMCS.getMappingsByAtoms().get(indexIPlus);
                     if (!indexI.equals(indexIPlus) && !indexJ.equals(indexJPlus)) {
 
                         IAtom sourceAtom1 = indexI;
@@ -302,15 +303,12 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
     }
 
     /**
-     * Returns bond maps between sourceAtomCount and targetAtomCount molecules
-     * based on the atoms
+     * Returns bond maps between sourceAtomCount and targetAtomCount molecules based on the atoms
      *
      * @param ac1 sourceAtomCount molecule
      * @param ac2 targetAtomCount molecule
-     * @param mappings mappings between sourceAtomCount and targetAtomCount
-     * molecule atoms
-     * @return bond maps between sourceAtomCount and targetAtomCount molecules
-     * based on the atoms
+     * @param mappings mappings between sourceAtomCount and targetAtomCount molecule atoms
+     * @return bond maps between sourceAtomCount and targetAtomCount molecules based on the atoms
      */
     public synchronized List<Map<IBond, IBond>> makeBondMapsOfAtomMaps(IAtomContainer ac1,
             IAtomContainer ac2, List<AtomAtomMapping> mappings) {
@@ -323,23 +321,20 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
 
     /**
      *
-     * Returns bond map between sourceAtomCount and targetAtomCount molecules
-     * based on the atoms
+     * Returns bond map between sourceAtomCount and targetAtomCount molecules based on the atoms
      *
      * @param ac1 sourceAtomCount molecule
      * @param ac2 targetAtomCount molecule
-     * @param mapping mappings between sourceAtomCount and targetAtomCount
-     * molecule atoms
-     * @return bond map between sourceAtomCount and targetAtomCount molecules
-     * based on the atoms
+     * @param mapping mappings between sourceAtomCount and targetAtomCount molecule atoms
+     * @return bond map between sourceAtomCount and targetAtomCount molecules based on the atoms
      */
     private synchronized Map<IBond, IBond> makeBondMapOfAtomMap(IAtomContainer ac1, IAtomContainer ac2,
             AtomAtomMapping mapping) {
 
         Map<IBond, IBond> bondbondMappingMap = Collections.synchronizedMap(new HashMap<IBond, IBond>());
 
-        for (Map.Entry<IAtom, IAtom> map1 : mapping.getMappings().entrySet()) {
-            for (Map.Entry<IAtom, IAtom> map2 : mapping.getMappings().entrySet()) {
+        for (Map.Entry<IAtom, IAtom> map1 : mapping.getMappingsByAtoms().entrySet()) {
+            for (Map.Entry<IAtom, IAtom> map2 : mapping.getMappingsByAtoms().entrySet()) {
                 if (map1.getKey() != map2.getKey()) {
                     IBond bond1 = ac1.getBond(map1.getKey(), map2.getKey());
                     IBond bond2 = ac2.getBond(map1.getValue(), map2.getValue());
@@ -351,5 +346,12 @@ public class BaseMapping extends ChemicalFilters implements IAtomMapping {
         }
 //        System.out.println("Mol Map size:" + bondbondMappingMap.size());
         return bondbondMappingMap;
+    }
+
+    /**
+     * @return the matchAtomType
+     */
+    public boolean isMatchAtomType() {
+        return matchAtomType;
     }
 }

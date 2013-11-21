@@ -14,7 +14,6 @@ import org.openscience.cdk.Bond;
 import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtom;
-import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IBond;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IRingSet;
@@ -49,9 +48,8 @@ public class UnionTest {
         MoleculeSanityCheck.aromatizeMolecule(mol1);
         MoleculeSanityCheck.aromatizeMolecule(mol2);
 
-        Isomorphism isomorphism = new Isomorphism(mol1, mol2, Algorithm.DEFAULT, true, false);
+        Isomorphism isomorphism = new Isomorphism(mol1, mol2, Algorithm.DEFAULT, true, false, false);
         isomorphism.setChemFilters(false, false, false);
-
 
         int combinations = 1;
 
@@ -75,8 +73,8 @@ public class UnionTest {
                     IAtom a1 = bond.getAtom(0);
                     IAtom a2 = bond.getAtom(1);
 
-                    if (!mapping.getMappings().containsValue(a1)
-                            && !mapping.getMappings().containsValue(a2)) {
+                    if (!mapping.getMappingsByAtoms().containsValue(a1)
+                            && !mapping.getMappingsByAtoms().containsValue(a2)) {
                         if (!union.contains(a1)) {
                             union.addAtom(a1);
                         }
@@ -84,18 +82,18 @@ public class UnionTest {
                             union.addAtom(a2);
                         }
                         union.addBond(bond);
-                    } else if (mapping.getMappings().containsValue(a1)
-                            && !mapping.getMappings().containsValue(a2)) {
+                    } else if (mapping.getMappingsByAtoms().containsValue(a1)
+                            && !mapping.getMappingsByAtoms().containsValue(a2)) {
                         if (!union.contains(a2)) {
                             union.addAtom(a2);
                         }
-                        union.addBond(new Bond(a2, getKey(a1, mapping.getMappings()), bond.getOrder(), bond.getStereo()));
-                    } else if (!mapping.getMappings().containsValue(a1)
-                            && mapping.getMappings().containsValue(a2)) {
+                        union.addBond(new Bond(a2, getKey(a1, mapping.getMappingsByAtoms()), bond.getOrder(), bond.getStereo()));
+                    } else if (!mapping.getMappingsByAtoms().containsValue(a1)
+                            && mapping.getMappingsByAtoms().containsValue(a2)) {
                         if (!union.contains(a1)) {
                             union.addAtom(a1);
                         }
-                        union.addBond(new Bond(a1, getKey(a2, mapping.getMappings()), bond.getOrder(), bond.getStereo()));
+                        union.addBond(new Bond(a1, getKey(a2, mapping.getMappingsByAtoms()), bond.getOrder(), bond.getStereo()));
                     }
                 }
                 /*check if this combination is chemically valid*/
@@ -109,13 +107,12 @@ public class UnionTest {
             }
         }
 
-        for (String container : acSet) {
-            System.out.println("\n-------------" + " Combination " + combinations++ + "--------------------");
-            System.out.println("Query SMILES " + getSMILES(mol1).toString() + ", count " + mol1.getAtomCount());
-            System.out.println("Target SMILES " + getSMILES(mol2).toString() + ", count " + mol2.getAtomCount());
-            System.out.println("Union SMILES " + container + ", count " + sp.parseSmiles(container).getAtomCount());
-        }
-
+//        for (String container : acSet) {
+        //System.out.println("\n-------------" + " Combination " + combinations++ + "--------------------");
+        //System.out.println("Query SMILES " + getSMILES(mol1).toString() + ", count " + mol1.getAtomCount());
+        //System.out.println("Target SMILES " + getSMILES(mol2).toString() + ", count " + mol2.getAtomCount());
+        //System.out.println("Union SMILES " + container + ", count " + sp.parseSmiles(container).getAtomCount());
+//        }
     }
 
     public IAtom getKey(IAtom a1, Map<IAtom, IAtom> map) {
@@ -136,7 +133,6 @@ public class UnionTest {
 
         SmilesGenerator sg = new SmilesGenerator(true);
         AllRingsFinder arf = new AllRingsFinder();
-        arf.setTimeout(900000);
 
         IRingSet findAllRings = arf.findAllRings(molecule);
         sg.setRings(findAllRings);

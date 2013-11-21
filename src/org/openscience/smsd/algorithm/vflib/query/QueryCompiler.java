@@ -54,6 +54,7 @@ import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.smsd.algorithm.matchers.AtomMatcher;
 import org.openscience.smsd.algorithm.matchers.BondMatcher;
 import org.openscience.smsd.algorithm.matchers.DefaultAtomMatcher;
+import org.openscience.smsd.algorithm.matchers.DefaultAtomTypeMatcher;
 import org.openscience.smsd.algorithm.matchers.DefaultBondMatcher;
 import org.openscience.smsd.algorithm.vflib.builder.VFQueryBuilder;
 import org.openscience.smsd.algorithm.vflib.interfaces.IQuery;
@@ -69,8 +70,9 @@ public class QueryCompiler implements IQueryCompiler {
 
     private IAtomContainer molecule = null;
     private IQueryAtomContainer queryMolecule = null;
-    private boolean shouldMatchBonds;
-    private boolean shouldMatchRings;
+    private final boolean shouldMatchBonds;
+    private final boolean shouldMatchRings;
+    private final boolean matchAtomType;
 
     /**
      * Construct query object from the molecule
@@ -78,11 +80,13 @@ public class QueryCompiler implements IQueryCompiler {
      * @param molecule
      * @param shouldMatchBonds
      * @param shouldMatchRings
+     * @param matchAtomType
      */
-    public QueryCompiler(IAtomContainer molecule, boolean shouldMatchBonds, boolean shouldMatchRings) {
+    public QueryCompiler(IAtomContainer molecule, boolean shouldMatchBonds, boolean shouldMatchRings, boolean matchAtomType) {
         this.setMolecule(molecule);
-        this.setBondMatchFlag(shouldMatchBonds);
-        this.setShouldMatchRings(shouldMatchRings);
+        this.shouldMatchRings = shouldMatchRings;
+        this.matchAtomType = matchAtomType;
+        this.shouldMatchBonds = shouldMatchBonds;
     }
 
     /**
@@ -92,6 +96,9 @@ public class QueryCompiler implements IQueryCompiler {
      */
     public QueryCompiler(IQueryAtomContainer molecule) {
         this.setQueryMolecule(molecule);
+        this.shouldMatchRings = true;
+        this.matchAtomType = true;
+        this.shouldMatchBonds = true;
     }
 
     /**
@@ -138,7 +145,11 @@ public class QueryCompiler implements IQueryCompiler {
     }
 
     private synchronized AtomMatcher createAtomMatcher(IAtom atom) {
-        return new DefaultAtomMatcher(atom, isShouldMatchRings());
+        if (isMatchAtomType()) {
+            return new DefaultAtomTypeMatcher(atom, isShouldMatchRings());
+        } else {
+            return new DefaultAtomMatcher(atom, isShouldMatchRings());
+        }
     }
 
     private synchronized BondMatcher createBondMatcher(IBond bond) {
@@ -153,13 +164,6 @@ public class QueryCompiler implements IQueryCompiler {
     }
 
     /**
-     * @param shouldMatchBonds the shouldMatchBonds to set
-     */
-    private synchronized void setBondMatchFlag(boolean shouldMatchBonds) {
-        this.shouldMatchBonds = shouldMatchBonds;
-    }
-
-    /**
      * @return the shouldMatchRings
      */
     private synchronized boolean isShouldMatchRings() {
@@ -167,9 +171,9 @@ public class QueryCompiler implements IQueryCompiler {
     }
 
     /**
-     * @param shouldMatchRings the shouldMatchRings to set
+     * @return the matchAtomType
      */
-    private synchronized void setShouldMatchRings(boolean shouldMatchRings) {
-        this.shouldMatchRings = shouldMatchRings;
+    private boolean isMatchAtomType() {
+        return matchAtomType;
     }
 }

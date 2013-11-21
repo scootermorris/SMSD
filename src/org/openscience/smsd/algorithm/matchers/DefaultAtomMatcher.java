@@ -23,6 +23,7 @@
  */
 package org.openscience.smsd.algorithm.matchers;
 
+import java.util.List;
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.annotations.TestClass;
 import org.openscience.cdk.interfaces.IAtom;
@@ -39,7 +40,6 @@ import org.openscience.cdk.isomorphism.matchers.IQueryAtom;
 @TestClass("org.openscience.cdk.smsd.algorithm.vflib.VFLibTest")
 public final class DefaultAtomMatcher implements AtomMatcher {
 
-    private final String SMALLEST_RING_SIZE = "SMALLEST_RING_SIZE";
     static final long serialVersionUID = -7861469841127327812L;
     private final String symbol;
     private final IAtom qAtom;
@@ -94,45 +94,40 @@ public final class DefaultAtomMatcher implements AtomMatcher {
                 return false;
             }
 
-            if (isShouldMatchRings()
-                    && isAtomAttachedToRing(getQueryAtom())
-                    && isAtomAttachedToRing(targetAtom)) {
-                return true;
-            } else if (isShouldMatchRings()
+            if (isMatchRings()
                     && (isAliphaticAtom(getQueryAtom()) && isRingAtom(targetAtom))) {
                 return false;
-            } else if (isShouldMatchRings()
+            } else if (isMatchRings()
                     && (isRingAtom(getQueryAtom()) && isAliphaticAtom(targetAtom))) {
                 return false;
-            } /*
-             * This tiggers error in matching example C00026_C00217
-             */ //            else if (shouldMatchRings
-            //                    && !(isRingAtom(qAtom) && isRingAtom(targetAtom))
-            //                    && qAtom.getHybridization() != null
-            //                    && targetAtom.getHybridization() != null
-            //                    && !qAtom.getHybridization().equals(targetAtom.getHybridization())) {
-            //                return false;
-            //            } 
-            else if (isShouldMatchRings() && (isRingAtom(getQueryAtom()) && isRingAtom(targetAtom))) {
-                if (getQueryAtom().getProperty(SMALLEST_RING_SIZE) != targetAtom.getProperty(SMALLEST_RING_SIZE)) {
+            } else if (isMatchRings() && isRingAtom(getQueryAtom()) && isRingAtom(targetAtom)) {
+                if (!isRingSizeMatch(targetAtom)) {
                     return false;
                 }
             }
-
         }
         return true;
     }
 
+    private boolean isRingSizeMatch(IAtom atom) {
+        List<Integer> ringsizesQ = qAtom.getProperty(CDKConstants.RING_SIZES);
+        List<Integer> ringsizesT = atom.getProperty(CDKConstants.RING_SIZES);
+        if (ringsizesQ != null && ringsizesT != null) {
+            for (int i : ringsizesQ) {
+                if (ringsizesT.contains(i)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private boolean isAliphaticAtom(IAtom atom) {
-        return atom.getFlag(CDKConstants.ISALIPHATIC) ? true : false;
+        return atom.getFlag(CDKConstants.ISALIPHATIC);
     }
 
     private boolean isRingAtom(IAtom atom) {
-        return atom.getFlag(CDKConstants.ISINRING) ? true : false;
-    }
-
-    private boolean isAtomAttachedToRing(IAtom atom) {
-        return ((Integer) atom.getProperty(CDKConstants.RING_CONNECTIONS)).intValue() > 0 ? true : false;
+        return atom.getFlag(CDKConstants.ISINRING);
     }
 
     /**
@@ -153,7 +148,7 @@ public final class DefaultAtomMatcher implements AtomMatcher {
     /**
      * @return the shouldMatchRings
      */
-    public boolean isShouldMatchRings() {
+    public boolean isMatchRings() {
         return shouldMatchRings;
     }
 }
